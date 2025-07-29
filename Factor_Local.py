@@ -8,7 +8,7 @@ import datetime
 from datetime import datetime, timedelta
 plt.style.use("dark_background")
 
-dados_empresas = pd.read_excel("statusinvest-busca-avancada.xlsx")
+dados_empresas = pd.read_excel("indicadores-julho.xlsx")
 
 def filtrar(dados_empresas):
     dados_empresas = dados_empresas[dados_empresas[' VALOR DE MERCADO'] > 50000000];

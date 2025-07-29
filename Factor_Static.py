@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 from scipy.optimize import minimize
 plt.style.use("dark_background")
 
-
+# periodo de observacao da carteira
 inicio = dt.date(2010, 1, 1)
 final = dt.date(2025, 5, 30)
 
