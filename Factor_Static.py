@@ -36,7 +36,7 @@ media_retornos = retornos.mean()
 matriz_cov = retornos.cov()
 
 # Configurações
-numero_carteiras = 10
+numero_carteiras = 10000
 tabela_retornos_esperados = np.zeros(numero_carteiras)
 tabela_volatilidades_esperadas = np.zeros(numero_carteiras)
 tabela_sharpe = np.zeros(numero_carteiras)
