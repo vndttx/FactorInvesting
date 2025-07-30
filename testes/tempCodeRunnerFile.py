@@ -12,8 +12,8 @@ df = yf.download(carteira, period = periodo, actions=True)
 
 df.dropna(inplace=True)
 
-quantidade = [10, 10, 10, 10]
+print (df)
 
-somaDiv = df['Dividends'].sum()*quantidade
+quantidade1 = [10000/acao for acao in df]
 
-print(f"Total dividend income in the last {periodo}: {somaDiv}")
+print(quantidade1)

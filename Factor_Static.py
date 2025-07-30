@@ -1,4 +1,3 @@
-
 import pandas as pd
 import bt as bt
 import yfinance as yf
@@ -12,9 +11,9 @@ plt.style.use("dark_background")
 
 # periodo de observacao da carteira
 inicio = dt.date(2010, 1, 1)
-final = dt.date(2025, 5, 30)
+final = dt.date(2025, 6, 30)
 
-carteira = ["VALE3", "ABCB4", "ITUB4", "BBAS3", "BBSE3", "CMIG4", "PETR4", 'CSMG3', 'VBBR3']
+carteira = ['SPYI11', 'BBAS3', 'ABCB4', 'CMIG4', 'PETR4', 'VALE3', 'GOGL34', 'AAPL34']
 #np.setdiff1d(carteira1, carteira2) # -> verifica a diferença entre as carteiras 1 e 2
 
 carteira = [acao + ".SA" for acao in carteira]
@@ -62,6 +61,9 @@ tabela_pesos[indice_do_sharpe_maximo]
 
 df = pd.DataFrame(carteira, columns=['Stock'])
 df['Weight'] = pd.DataFrame(tabela_pesos[indice_do_sharpe_maximo])
+
+print(df['Stock'])
+print(df['Weight'])
 
 data = bt.get(carteira, start = f"{inicio:%Y-%m-%d}", end = f"{final:%Y-%m-%d}")
 
