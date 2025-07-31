@@ -2,27 +2,18 @@ import bt
 import matplotlib.pyplot as plt
 import pandas as pd
 
-inicio = '1999-01-01'
-tickers = ['VALE3.SA', 'PETR4.SA']
+inicio = '1995-01-01'
+tickers = ['VALE3.SA', 'PETR4.SA', 'BBAS3.SA']
+##com itub4 fica pior
+##melhor com vale3, petr4 e bbas3 usando a mm21
 
 try:
     data = bt.get(tickers, start=inicio)
 except Exception as e:
     print(f"Erro ao obter dados: {e}")
     exit()
-
-class SelectWhere(bt.Algo):
-    def __init__(self, signal):
-        self.signal = signal
-        
-    def __call__(self, target):
-        if target.now in self.signal.index:
-            sig = self.signal.loc[target.now]
-            selected = list(sig.index[sig])
-            target.temp['selected'] = selected
-        return True
   
-def above_sma(data, sma_per = 50, name='above_sma'):
+def above_sma(data, sma_per = 21, name='above_sma'):
     
         signal = data > data.rolling(sma_per).mean()
 
@@ -44,19 +35,19 @@ def bhBenchmark(data, name='bhBenchmark'):
         return bt.Backtest(s2, data)
     
 mm9 = above_sma(data, sma_per = 9, name ='mm9')
-mm21 = above_sma(data, sma_per = 20, name ='mm20')
-mm50 = above_sma(data, sma_per = 50, name ='mm50')
+mm21 = above_sma(data, sma_per = 21, name ='mm21')
+mm200 = above_sma(data, sma_per = 200, name ='mm200')
     
 benchmark = bhBenchmark(data, name='benchmark')
     
 plt.ioff()
     
-res = bt.run(mm9, mm21, mm50, benchmark)
+res = bt.run(mm9, mm21, mm200, benchmark)
 res.plot(freq='ME')
     
 plt.show()
 
-print(res.stats) #alternativa ao res.display(), tabela
+#print(res.stats) -> alternativa ao res.display(), tabela
 
-#res.display() estatisticas dos trades
+res.display() #estatisticas dos trades
 

@@ -2,41 +2,35 @@ import bt
 import matplotlib.pyplot as plt
 import pandas as pd
 
-data = bt.get('VALE3.SA', start='1999-01-01')
+inicio = '1999-01-01'
+ticker = 'VALE3.SA'
 
+try:
+    data = bt.get(ticker, start=inicio)
+except Exception as e:
+    print(f"Erro ao obter dados: {e}")
+    exit()
+
+sma = data.rolling(33).mean()
 #data.rolling() pega os ultimos X periodos e .mean() faz a média
-sma = data.rolling(50).mean()
 
 #plot = bt.merge(data, sma).plot(figsize=(15, 5))
 #so tirar o comentario se quiser plotar
 
-class SelectWhere(bt.Algo):
-    def __init__(self, signal):
-        self.signal = signal
-    def __call__(self, target):
-        
-        if target.now in self.signal.index:
-            sig = self.signal.loc[target.now]
-
-            selected = list(sig.index[sig])
-
-            target.temp['selected'] = selected
-
-        return True
-
 signal = data > sma
 
-s = bt.Strategy('MM50', [SelectWhere(data > sma),
-                               bt.algos.WeighEqually(),
-                               bt.algos.Rebalance()])
+s = bt.Strategy('MM33', [
+    bt.algos.SelectWhere(signal),
+    bt.algos.WeighEqually(),
+    bt.algos.Rebalance()
+    ])
 
 plt.ioff()
 
 t = bt.Backtest(s, data)
 res = bt.run(t)
 res.plot()
+plt.title(f'Backtest da Estratégia de Média Móvel 33 para {ticker}')
 plt.show()
 
-#res.display() estatisticas dos trades
-
-
+res.display() #estatisticas do modelo
