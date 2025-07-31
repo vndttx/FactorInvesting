@@ -1,0 +1,62 @@
+import bt
+import matplotlib.pyplot as plt
+import pandas as pd
+
+inicio = '1999-01-01'
+tickers = ['VALE3.SA', 'PETR4.SA']
+
+try:
+    data = bt.get(tickers, start=inicio)
+except Exception as e:
+    print(f"Erro ao obter dados: {e}")
+    exit()
+
+class SelectWhere(bt.Algo):
+    def __init__(self, signal):
+        self.signal = signal
+        
+    def __call__(self, target):
+        if target.now in self.signal.index:
+            sig = self.signal.loc[target.now]
+            selected = list(sig.index[sig])
+            target.temp['selected'] = selected
+        return True
+  
+def above_sma(data, sma_per = 50, name='above_sma'):
+    
+        signal = data > data.rolling(sma_per).mean()
+
+        s = bt.Strategy(name, [
+            bt.algos.SelectWhere(signal),
+            bt.algos.WeighEqually(),
+            bt.algos.Rebalance()
+        ])
+        return bt.Backtest(s, data)
+        
+def bhBenchmark(data, name='bhBenchmark'):
+        
+        s2 = bt.Strategy(name, [
+            bt.algos.RunOnce(),
+            bt.algos.SelectAll(),
+            bt.algos.WeighEqually(),
+            bt.algos.Rebalance()
+        ])        
+        return bt.Backtest(s2, data)
+    
+mm9 = above_sma(data, sma_per = 9, name ='mm9')
+mm21 = above_sma(data, sma_per = 20, name ='mm20')
+mm50 = above_sma(data, sma_per = 50, name ='mm50')
+    
+benchmark = bhBenchmark(data, name='benchmark')
+    
+plt.ioff()
+    
+res = bt.run(mm9, mm21, mm50, benchmark)
+res.plot(freq='ME')
+    
+plt.show()
+
+print(res.stats) #alternativa ao res.display(), tabela
+
+#res.display() estatisticas dos trades
+

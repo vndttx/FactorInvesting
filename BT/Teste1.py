@@ -12,15 +12,7 @@ s = bt.Strategy('s1', [bt.algos.RunMonthly(),
 test = bt.Backtest(s, data)
 res = bt.run(test)
 
-plt.ioff()
-
-res.plot()
-
-plt.show()
-
-res.display()
-
-s2 = bt.Strategy('s2', [bt.algos.RunWeekly(),
+s2 = bt.Strategy('s2', [bt.algos.RunMonthly(),
                         bt.algos.SelectAll(),
                         bt.algos.WeighInvVol(),
                         bt.algos.Rebalance()])
@@ -30,6 +22,10 @@ test2 = bt.Backtest(s2, data)
 
 res2 = bt.run(test, test2)
 
+plt.ioff()
 res2.plot()
-
+plt.show()
 res2.display()
+
+
+
