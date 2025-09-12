@@ -14,6 +14,8 @@ inicio = dt.date(1999, 1, 1)
 final = dt.date(2025, 6, 30)
 
 carteira = ['PETR4', 'VALE3', 'BBAS3', 'ITUB4', 'BBSE3', 'CMIG4', 'CSMG3', 'GOGL34', 'ABCB4', 'VBBR3', 'AAPL34', 'BPAC11']
+carteira2 = ['PETR4', 'VALE3', 'BBAS3', 'ITUB4', 'BBSE3', 'CMIG4', 'CSMG3', 'GOGL34', 'ABCB4', 'VBBR3', 'AAPL34']
+
 #np.setdiff1d(carteira1, carteira2) # -> verifica a diferença entre as carteiras 1 e 2
 
 carteira = [acao + ".SA" for acao in carteira]
@@ -95,7 +97,7 @@ Anual = bt.Strategy('Anual',
 
 #estratégia comprando a carteira apenas uma vez
 BuyandHold = bt.Strategy('Buy And Hold',
-                       [bt.algos.RunMonthly(),
+                       [bt.algos.RunOnce(),
                         bt.algos.SelectAll(),
                         bt.algos.WeighSpecified(**pesos_dicionario),
                         bt.algos.Rebalance()])

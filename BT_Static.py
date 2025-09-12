@@ -12,7 +12,7 @@ plt.style.use("dark_background")
 inicio = dt.date(1999, 1, 1)
 final = dt.date(2025, 7, 29)
 
-carteira = ['PETR4', 'VALE3', 'BBAS3', 'ITUB4', 'BBSE3', 'CMIG4', 'CSMG3', 'GOGL34', 'ABCB4', 'VBBR3', 'AAPL34', 'BPAC11']
+carteira = ['PETR4', 'VALE3', 'BBAS3', 'ITUB4', 'BBSE3', 'CMIG4', 'CSMG3', 'ABCB4', 'VBBR3', 'AAPL34', 'JBSS32']
 
 pesos = [0.1558, 0.1392, 0.1148, 0.0996, 0.0859, 0.0819, 0.0778, 0.0663, 0.0532, 0.0475, 0.0473, 0.0308]
 
