@@ -12,8 +12,8 @@ plt.style.use("dark_background")
 inicio = dt.date(1999, 1, 1)
 final = dt.date(2025, 9, 19)
 
-carteira1 = ['PETR4', 'VALE3', 'BBAS3']
-carteira2 = ['BPAC11', 'ABCB4', 'CSMG3']
+carteira1 = ['PETR4', 'VALE3', 'BBAS3', 'ITUB4']
+carteira2 = ['DIVO11', 'IVVB11', 'IMAB11', 'GOLD11']
 
 #np.setdiff1d(carteira1, carteira2) # -> verifica a diferença entre as carteiras 1 e 2
 
