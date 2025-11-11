@@ -13,7 +13,8 @@ inicio = dt.date(1999, 1, 1)
 final = dt.date(2025, 9, 19)
 
 carteira1 = ['PETR4', 'VALE3', 'BBAS3', 'ITUB4']
-carteira2 = ['DIVO11', 'IVVB11', 'IMAB11', 'GOLD11']
+carteira2 = ['BOVA11', 'LFTS11']
+#carteira2 = ['DIVO11', 'IVVB11', 'IMAB11', 'GOLD11']
 
 #np.setdiff1d(carteira1, carteira2) # -> verifica a diferença entre as carteiras 1 e 2
 
@@ -23,7 +24,7 @@ precos = yf.download(carteira1, inicio, final)['Close']
 precos.dropna(inplace=True)
 data = bt.get(carteira1, start = f"{inicio:%Y-%m-%d}", end = f"{final:%Y-%m-%d}")
 
-Carteira1 = bt.Strategy('Carteiral',
+Carteira1 = bt.Strategy('Carteira1',
                        [bt.algos.RunQuarterly(),
                         bt.algos.SelectAll(),
                         bt.algos.WeighEqually(),
