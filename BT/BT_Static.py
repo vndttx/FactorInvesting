@@ -15,11 +15,9 @@ final = dt.date(2025, 10, 31)
 ##python -m venv .venv
 ##source .venv/bin/activate
 
-carteira = ['BOVA11', 'LFTS11']
-carteira2 = ['BBSE3', 'VALE3', 'PETR4', 'ITUB4', 'ABCB4', 'CMIG4', 'BBAS3', 'CSMG3', 'BRKM5', 'PRIO3', 'AGRO3']
+carteira = ['BBSE3', 'VALE3', 'PETR4', 'ITUB4', 'ABCB4', 'CMIG4', 'BBAS3', 'CSMG3', 'BRKM5', 'PRIO3', 'AGRO3']
 
-pesos = [0.7, 0.3]
-pesos2 = [0.1, 0.1, 0.1, 0.1, 0.1, 0.09, 0.08, 0.08, 0.08, 0.09, 0.08]
+pesos = [0.1, 0.1, 0.1, 0.1, 0.1, 0.09, 0.08, 0.08, 0.08, 0.09, 0.08]
 
 carteira = [acao + ".SA" for acao in carteira]
 

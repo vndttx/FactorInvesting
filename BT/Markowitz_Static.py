@@ -11,16 +11,17 @@ plt.style.use("dark_background")
 
 # periodo de observacao da carteira
 inicio = dt.date(1999, 1, 1)
-final = dt.date(2025, 6, 30)
+final = dt.date(2025, 10, 31)
+
+carteira = ['BBSE3', 'PETR4', 'VALE3', 'CMIG4', 'ITUB4', 'BBAS3', 'CSMG3', 'AGRO3','PSSA3', 'UNIP6', 'SLCE3', 'GOLD11']
 
 #carteira = ['PETR4', 'VALE3', 'BBAS3', 'ITUB4', 'BBSE3', 'CMIG4', 'CSMG3', 'GOGL34', 'ABCB4', 'VBBR3', 'AAPL34', 'BPAC11']
-carteira = ['VALE3', 'ABCB4', 'BBAS3', 'ITUB4', 'CMIG4', 'PETR4', 'BBSE3', 'PRIO3', 'CSMG3', 'AGRO3']
 
 #np.setdiff1d(carteira1, carteira2) # -> verifica a diferença entre as carteiras 1 e 2
 
 carteira = [acao + ".SA" for acao in carteira]
 
-precos = yf.download(carteira, inicio, final)['Close']
+precos = yf.download(carteira, inicio, final, auto_adjust=True)['Close']
 precos.dropna(inplace=True)
 
 data = bt.get(carteira, start = f"{inicio:%Y-%m-%d}", end = f"{final:%Y-%m-%d}")
