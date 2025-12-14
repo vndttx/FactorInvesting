@@ -8,7 +8,81 @@ import datetime
 from datetime import datetime, timedelta
 plt.style.use("dark_background")
 
-dados_empresas = pd.read_excel("indicadores-julho.xlsx")
+# Top 50 IBOV components (Approximate list for simulation)
+top_50_tickers = [
+    "VALE3.SA", "PETR4.SA", "ITUB4.SA", "PETR3.SA", "BBDC4.SA", "ELET3.SA", "BBAS3.SA", "WEGE3.SA", 
+    "ITSA4.SA", "RENT3.SA", "BPAC11.SA", "SUZB3.SA", "HAPV3.SA", "PRIO3.SA", "RDOR3.SA", "RADL3.SA", 
+    "GGBR4.SA", "UGPA3.SA", "CSAN3.SA", "VBBR3.SA", "B3SA3.SA", "JBSS3.SA", "SBSP3.SA", "VIVT3.SA", 
+    "BBSE3.SA", "TIMS3.SA", "RAIL3.SA", "CMIG4.SA", "CPLE6.SA", "EQTL3.SA", "LREN3.SA", "MGLU3.SA", 
+    "ASAI3.SA", "HYPE3.SA", "TOTS3.SA", "CSNA3.SA", "USIM5.SA", "EMBR3.SA", "GOAU4.SA", "CCRO3.SA", 
+    "ENEV3.SA", "EGIE3.SA", "CPFE3.SA", "BRFS3.SA", "KLBN11.SA", "BRKM5.SA", "CRFB3.SA", "PCAR3.SA", 
+    "AZUL4.SA", "CVCB3.SA"
+]
+
+def fetch_market_data(tickers):
+    print(f"Fetching fundamental data for {len(tickers)} tickers. This may take a moment...")
+    data_list = []
+    
+    for t in tickers:
+        try:
+            ticker = yf.Ticker(t)
+            info = ticker.info
+            
+            # Map YF info to script columns
+            current_price = info.get('currentPrice', 0)
+            avg_volume = info.get('averageVolume', 0)
+            
+            # Safely get values, defaulting to 0
+            market_cap = info.get('marketCap', 0)
+            liquidity = avg_volume * current_price if current_price else 0
+            net_margin = info.get('profitMargins', 0)
+            gross_margin = info.get('grossMargins', 0)
+            op_margin = info.get('operatingMargins', 0)
+            rev_growth = info.get('revenueGrowth', 0)
+            earnings_growth = info.get('earningsGrowth', 0)
+            roe = info.get('returnOnEquity', 0)
+            current_ratio = info.get('currentRatio', 0)
+            peg_ratio = info.get('pegRatio', 0)
+            price_to_book = info.get('priceToBook', 0)
+            pe_ratio = info.get('trailingPE', 0)
+            price_to_sales = info.get('priceToSalesTrailing12Months', 0)
+            eps = info.get('trailingEps', 0)
+            
+            # P/EBIT Calculation: Market Cap / EBIT
+            # EBIT ~ Revenue * Operating Margin
+            revenue = info.get('totalRevenue', 0)
+            ebit = revenue * op_margin if revenue and op_margin else 0
+            p_ebit = market_cap / ebit if ebit else 0
+            
+            data_list.append({
+                'TICKER': t, 
+                'TICKER_CLEAN': t.replace('.SA', ''),
+                ' VALOR DE MERCADO': market_cap,
+                ' LIQUIDEZ MEDIA DIARIA': liquidity,
+                'MARG. LIQUIDA': net_margin,
+                'MARGEM BRUTA': gross_margin,
+                'MARGEM EBIT': op_margin,
+                'CAGR RECEITAS 5 ANOS': rev_growth,
+                'CAGR LUCROS 5 ANOS': earnings_growth,
+                'ROE': roe,
+                'LIQ. CORRENTE': current_ratio,
+                ' PEG Ratio': peg_ratio,
+                'P/VP': price_to_book,
+                'P/L': pe_ratio,
+                'PSR': price_to_sales,
+                'P/EBIT': p_ebit,
+                ' LPA': eps
+            })
+        except Exception as e:
+            print(f"Failed to fetch {t}: {e}")
+            
+    df = pd.DataFrame(data_list)
+    # Rename for compatibility with line 45/60
+    df = df.rename(columns={'TICKER_CLEAN': 'TICKER'})
+    return df
+
+# dados_empresas = pd.read_excel("indicadores-julho.xlsx")
+dados_empresas = fetch_market_data(top_50_tickers)
 
 def filtrar(dados_empresas):
     dados_empresas = dados_empresas[dados_empresas[' VALOR DE MERCADO'] > 50000000];

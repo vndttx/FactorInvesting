@@ -13,13 +13,13 @@ except Exception as e:
     
 
 mediacurta = data.rolling(9).mean()
-mediamedia = data.rolling(21).mean()
-medialonga = data.rolling(80).mean()
+mediamedia = data.rolling(50).mean()
+medialonga = data.rolling(144).mean()
 
 tw = mediamedia.copy()
 condicao_compra = (mediacurta >= mediamedia) & (medialonga <= mediamedia)
 tw[condicao_compra] = 1.0
-condicao_venda = (medialonga > mediamedia) & (mediacurta < mediamedia)
+condicao_venda = (medialonga >= mediamedia) & (mediacurta <= mediamedia)
 tw[condicao_venda] = -1.0
 tw[mediamedia.isnull()] = 0.0
 

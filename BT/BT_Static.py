@@ -9,15 +9,24 @@ import matplotlib.pyplot as plt
 from scipy.optimize import minimize
 plt.style.use("dark_background")
 
-inicio = dt.date(2025, 1, 2)
+inicio = dt.date(2015, 1, 1)
 final = dt.date(2025, 10, 31)
 
 ##python -m venv .venv
 ##source .venv/bin/activate
 
-carteira = ['BBSE3', 'VALE3', 'PETR4', 'ITUB4', 'ABCB4', 'CMIG4', 'BBAS3', 'CSMG3', 'BRKM5', 'PRIO3', 'AGRO3']
+carteira = ['BBSE3', 'PSSA3','PETR4', 'ITUB4','CMIG4', 'BBAS3', 'CSMG3', 'UNIP6','KLBN11', 'SLCE3']
 
-pesos = [0.1, 0.1, 0.1, 0.1, 0.1, 0.09, 0.08, 0.08, 0.08, 0.09, 0.08]
+pesos = [0.10,
+         0.10,
+         0.10,
+         0.15,
+         0.10,
+         0.10,
+         0.10,
+         0.10,
+         0.075,
+         0.075]
 
 carteira = [acao + ".SA" for acao in carteira]
 
