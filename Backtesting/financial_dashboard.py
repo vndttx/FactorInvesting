@@ -1,0 +1,416 @@
+import tkinter as tk
+from tkinter import ttk, messagebox
+import sys
+import os
+import yfinance as yf
+import threading
+import matplotlib
+matplotlib.use("TkAgg")
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib.figure import Figure
+import matplotlib.ticker as mtick
+
+# Ensure we can import from the Backtesting directory
+current_dir = os.path.dirname(os.path.abspath(__file__))
+backtesting_dir = os.path.join(current_dir, 'Backtesting')
+if backtesting_dir not in sys.path:
+    sys.path.append(backtesting_dir)
+
+try:
+    import valuation
+    import backtest_tool
+    import pandas as pd
+except ImportError as e:
+    messagebox.showerror("Import Error", f"Could not import modules from Backtesting folder.\nError: {e}")
+    sys.exit(1)
+
+# --- APP CLASS ---
+class FinancialDashboardArgs(tk.Tk):
+    def __init__(self):
+        super().__init__()
+        self.title("Factor Investing Dashboard")
+        self.geometry("900x700")
+        
+        # Style
+        style = ttk.Style()
+        style.theme_use('clam') # Modern-ish
+        
+        # Main Container
+        self.notebook = ttk.Notebook(self)
+        self.notebook.pack(fill='both', expand=True, padx=10, pady=10)
+        
+        # Tabs
+        self.create_valuation_tab()
+        self.create_backtest_tab()
+        
+    def create_valuation_tab(self):
+        self.tab_val = ttk.Frame(self.notebook)
+        self.notebook.add(self.tab_val, text="Stock Valuation")
+        
+        # Input Frame
+        input_frame = ttk.LabelFrame(self.tab_val, text="Input", padding=10)
+        input_frame.pack(fill='x', padx=10, pady=10)
+        
+        ttk.Label(input_frame, text="Ticker (e.g., PETR4):").pack(side='left', padx=5)
+        self.val_ticker_entry = ttk.Entry(input_frame, width=15)
+        self.val_ticker_entry.pack(side='left', padx=5)
+        self.val_ticker_entry.bind('<Return>', lambda e: self.run_valuation())
+        
+        self.btn_analyze = ttk.Button(input_frame, text="Analyze", command=self.run_valuation)
+        self.btn_analyze.pack(side='left', padx=5)
+        
+        # Results Frame
+        results_frame = ttk.LabelFrame(self.tab_val, text="Valuation Results", padding=10)
+        results_frame.pack(fill='both', expand=True, padx=10, pady=10)
+        
+        # Treeview for Table
+        columns = ("Method", "Implied Value", "Upside", "Status", "Notes")
+        self.val_tree = ttk.Treeview(results_frame, columns=columns, show='headings')
+        
+        for col in columns:
+            self.val_tree.heading(col, text=col)
+            self.val_tree.column(col, width=120)
+        
+        # Adjust specific column widths
+        self.val_tree.column("Method", width=150)
+        self.val_tree.column("Notes", width=250)
+            
+        self.val_tree.pack(fill='both', expand=True)
+        
+        # Status Bar / Info
+        self.val_status_label = ttk.Label(results_frame, text="Ready.", font=('Arial', 9, 'italic'))
+        self.val_status_label.pack(pady=5, anchor='w')
+
+    def create_backtest_tab(self):
+        self.tab_bt = ttk.Frame(self.notebook)
+        self.notebook.add(self.tab_bt, text="Portfolio Backtest")
+        
+        # Input Frame
+        input_frame = ttk.LabelFrame(self.tab_bt, text="Configuration", padding=10)
+        input_frame.pack(fill='x', padx=10, pady=10)
+        
+        # Grid layout for inputs
+        ttk.Label(input_frame, text="Tickers (comma sep):").grid(row=0, column=0, sticky='w', padx=5, pady=5)
+        self.bt_tickers_entry = ttk.Entry(input_frame, width=50)
+        self.bt_tickers_entry.grid(row=0, column=1, columnspan=3, sticky='w', padx=5, pady=5)
+        self.bt_tickers_entry.insert(0, "VALE3.SA, PETR4.SA, ITUB4.SA, WEGE3.SA")
+        
+        ttk.Label(input_frame, text="Initial Invest (BRL):").grid(row=1, column=0, sticky='w', padx=5, pady=5)
+        self.bt_initial_entry = ttk.Entry(input_frame, width=15)
+        self.bt_initial_entry.grid(row=1, column=1, sticky='w', padx=5, pady=5)
+        self.bt_initial_entry.insert(0, "1000")
+        
+        ttk.Label(input_frame, text="Monthly Invest (BRL):").grid(row=1, column=2, sticky='w', padx=5, pady=5)
+        self.bt_monthly_entry = ttk.Entry(input_frame, width=15)
+        self.bt_monthly_entry.grid(row=1, column=3, sticky='w', padx=5, pady=5)
+        self.bt_monthly_entry.insert(0, "500")
+        
+        ttk.Label(input_frame, text="Start Date (YYYY-MM-DD):").grid(row=2, column=0, sticky='w', padx=5, pady=5)
+        self.bt_start_entry = ttk.Entry(input_frame, width=15)
+        self.bt_start_entry.grid(row=2, column=1, sticky='w', padx=5, pady=5)
+        self.bt_start_entry.insert(0, "2018-01-01")
+        
+        self.btn_run_bt = ttk.Button(input_frame, text="Run Backtest", command=self.run_backtest_thread)
+        self.btn_run_bt.grid(row=2, column=3, sticky='e', padx=5, pady=5)
+        
+        # Results Frame
+        self.bt_results_frame = ttk.LabelFrame(self.tab_bt, text="Performance Outcomes", padding=10)
+        self.bt_results_frame.pack(fill='both', expand=True, padx=10, pady=10)
+        
+        # Sub-tabs for Results
+        self.bt_notebook = ttk.Notebook(self.bt_results_frame)
+        self.bt_notebook.pack(fill='both', expand=True)
+        
+        # Tab 1: Summary & Chart
+        self.bt_tab_summary = ttk.Frame(self.bt_notebook)
+        self.bt_notebook.add(self.bt_tab_summary, text="Summary & Chart")
+        
+        self.bt_text_output = tk.Text(self.bt_tab_summary, height=10, width=80)
+        self.bt_text_output.pack(side='left', fill='y', padx=5, pady=5)
+        
+        # Placeholder for Chart (Canvas) - will be packed to right
+        self.bt_chart_frame = ttk.Frame(self.bt_tab_summary)
+        self.bt_chart_frame.pack(side='left', fill='both', expand=True, padx=5, pady=5)
+        
+        # Tab 2: Monthly Dividends
+        self.bt_tab_divs = ttk.Frame(self.bt_notebook)
+        self.bt_notebook.add(self.bt_tab_divs, text="Monthly Dividends")
+        
+        # Treeview for Dividends
+        self.div_tree = ttk.Treeview(self.bt_tab_divs, show='headings')
+        self.div_tree.pack(fill='both', expand=True, padx=5, pady=5)
+        
+        # Scrollbars for Div Table
+        vsb = ttk.Scrollbar(self.bt_tab_divs, orient="vertical", command=self.div_tree.yview)
+        vsb.pack(side='right', fill='y')
+        hsb = ttk.Scrollbar(self.bt_tab_divs, orient="horizontal", command=self.div_tree.xview)
+        hsb.pack(side='bottom', fill='x')
+        self.div_tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
+
+    # --- LOGIC ---
+
+
+    def run_valuation(self):
+        ticker_input = self.val_ticker_entry.get().strip().upper()
+        if not ticker_input:
+            messagebox.showwarning("Input Error", "Please enter a ticker symbol.")
+            return
+            
+        if not ticker_input.endswith(".SA"):
+            ticker = f"{ticker_input}.SA"
+        else:
+            ticker = ticker_input
+            
+        self.val_status_label.config(text=f"Fetching data for {ticker}...")
+        self.val_tree.delete(*self.val_tree.get_children())
+        self.update_idletasks()
+        
+        # Run in thread to avoid freezing GUI
+        t = threading.Thread(target=self._process_valuation, args=(ticker,))
+        t.start()
+        
+    def _process_valuation(self, ticker):
+        try:
+            stock = yf.Ticker(ticker)
+            data = valuation.get_financial_data(stock)
+            
+            if not data:
+                self.after(0, lambda: messagebox.showerror("Error", "Could not fetch data (check ticker or internet)."))
+                self.after(0, lambda: self.val_status_label.config(text="Error."))
+                return
+
+            rows = [] # (Method, Implied, Upside, Status, Note)
+            
+            # Use logic from valuation.py
+            price = data['current_price']
+            
+            # 1. Bazin
+            bazin_price, bazin_dy = valuation.calculate_bazin(data)
+            if bazin_price:
+                upside = ((bazin_price - price) / price) * 100
+                status = "Cheap" if bazin_price > price else "Expensive"
+                rows.append(("Décio Bazin", f"R$ {bazin_price:.2f}", f"{upside:+.2f}%", status, f"Avg Yield: {bazin_dy:.2f}% (Target 6%)"))
+            else:
+                rows.append(("Décio Bazin", "N/A", "-", "-", "Insufficient Data"))
+
+            # 2. Graham
+            graham_price = valuation.calculate_graham(data)
+            if graham_price:
+                upside = ((graham_price - price) / price) * 100
+                status = "Cheap" if graham_price > price else "Expensive"
+                rows.append(("Graham Number", f"R$ {graham_price:.2f}", f"{upside:+.2f}%", status, "Sqrt(22.5 * EPS * BVPS)"))
+            else:
+                rows.append(("Graham Number", "N/A", "-", "-", "Neg Earnings/Book"))
+
+            # 3. P/E (Logic from view_file step 14, lines 173-180)
+            pe = data.get('pe_ratio')
+            eps = data.get('eps')
+            if pe and eps:
+                fair_pe = 15 * eps
+                upside_pe = ((fair_pe - price) / price) * 100
+                status_pe = "Cheap" if fair_pe > price else "Expensive"
+                rows.append(("P/E Ratio (15x)", f"R$ {fair_pe:.2f}", f"{upside_pe:+.2f}%", status_pe, f"Current P/E: {pe:.2f}"))
+            else:
+                rows.append(("P/E Ratio", "N/A", "-", "-", "-"))
+            
+            # 4. PEG
+            peg, peg_note = valuation.calculate_peg(data)
+            if peg:
+                status = "Undervalued" if peg < 1 else "Overvalued"
+                rows.append(("PEG Ratio", f"{peg:.2f}", "-", status, f"<1.0 is Good ({peg_note})"))
+            else:
+                rows.append(("PEG Ratio", "N/A", "-", "-", "-"))
+
+            # Update GUI
+            self.after(0, lambda: self._update_val_table(rows, price))
+            
+        except Exception as e:
+            self.after(0, lambda: messagebox.showerror("Error", str(e)))
+            
+    def _update_val_table(self, rows, current_price):
+        for row in rows:
+            self.val_tree.insert("", "end", values=row)
+        self.val_status_label.config(text=f"Analysis complete. Current Price: R$ {current_price:.2f}")
+
+
+
+    def run_backtest_thread(self):
+        # Validate inputs
+        tickers_str = self.bt_tickers_entry.get()
+        init_str = self.bt_initial_entry.get()
+        monthly_str = self.bt_monthly_entry.get()
+        start_date = self.bt_start_entry.get()
+        
+        if not tickers_str or not init_str or not monthly_str or not start_date:
+            messagebox.showwarning("Missing Inputs", "Please fill all fields.")
+            return
+            
+        # Parse tickers: Remove need for .SA
+        raw_tickers = [t.strip().upper() for t in tickers_str.split(',') if t.strip()]
+        tickers = []
+        for t in raw_tickers:
+            # If it already has a dot (e.g. .SA, .DE, =X), keep it
+            if '.' in t or '=' in t:
+                tickers.append(t)
+            else:
+                # Assume B3 stick if no extension provided
+                tickers.append(f"{t}.SA")
+        
+        try:
+            initial = float(init_str)
+            monthly = float(monthly_str)
+        except ValueError:
+            messagebox.showerror("Invalid Number", "Investments must be numbers.")
+            return
+            
+        self.btn_run_bt.config(state='disabled')
+        self.bt_text_output.delete("1.0", tk.END)
+        self.bt_text_output.insert(tk.END, "Running backtest... Please wait.\n")
+        
+        # Clear previous plot if any - Managed in _show_bt_results now
+
+        
+        t = threading.Thread(target=self._process_backtest, args=(tickers, initial, monthly, start_date))
+        t.start()
+        
+    def _process_backtest(self, tickers, initial, monthly, start_date):
+        try:
+            bt = backtest_tool.PortfolioBacktester(tickers, initial, monthly, start_date)
+            bt.run() # This fetches data and calcs
+            
+            # Calc Metrics
+            m_reinvest = bt.calculate_metrics(bt.daily_returns_reinvest, bt.risk_free_daily_series.values)
+            m_no_reinvest = bt.calculate_metrics(bt.daily_returns_no_reinvest, bt.risk_free_daily_series.values)
+            
+            # Format Output
+            output = []
+            output.append("\n=== PERFORMANCE METRICS ===\n")
+            output.append(f"{'Metric':<25} | {'With Reinvest':<15} | {'No Reinvest':<15}")
+            output.append("-" * 65)
+            
+            for k in m_reinvest.keys():
+                val_r = m_reinvest[k]
+                val_nr = m_no_reinvest[k]
+                
+                if k in ["Total Return", "CAGR", "Volatility", "Max Drawdown"]:
+                    fmt_r = f"{val_r*100:.2f}%"
+                    fmt_nr = f"{val_nr*100:.2f}%"
+                else:
+                    fmt_r = f"{val_r:.2f}"
+                    fmt_nr = f"{val_nr:.2f}"
+                output.append(f"{k:<25} | {fmt_r:<15} | {fmt_nr:<15}")
+            
+            output.append("\n\n=== FINAL PORTFOLIO VALUES (BRL) ===")
+            final = bt.results.iloc[-1]
+            for k, v in final.items():
+                output.append(f"{k:<25}: R$ {v:,.2f}")
+                
+            report = "\n".join(output)
+            
+            self.after(0, lambda: self._show_bt_results(report, bt))
+            
+        except Exception as e:
+            self.after(0, lambda: self._bt_error(str(e)))
+            
+    def _show_bt_results(self, report, bt_obj):
+        self.bt_text_output.delete("1.0", tk.END)
+        self.bt_text_output.insert(tk.END, report)
+        self.btn_run_bt.config(state='normal')
+        
+        # --- Embed Plot ---
+        # 1. Clear previous canvas
+        for widget in self.bt_chart_frame.winfo_children():
+            widget.destroy()
+            
+        # 2. Create Figure
+        fig = Figure(figsize=(5, 4), dpi=100)
+        ax = fig.add_subplot(111)
+        
+        # 3. Plot Data using bt_obj.results
+        results = bt_obj.results
+        ax.plot(results.index, results['With Reinvestment'], label='With Divs')
+        ax.plot(results.index, results['Without Reinvestment'], label='No Reinvest')
+        ax.plot(results.index, results['Risk Free'], label='Risk Free', linestyle='--')
+        
+        ax.set_title('Portfolio Performance')
+        ax.set_xlabel('Date')
+        ax.set_ylabel('Value (BRL)')
+        ax.legend()
+        ax.grid(True)
+        
+        # Format Y axis
+        def currency(x, pos):
+            return f'R$ {x:,.0f}'.replace(',', 'X').replace('.', ',').replace('X', '.')
+        ax.yaxis.set_major_formatter(mtick.FuncFormatter(currency))
+        
+        fig.tight_layout()
+        
+        # 4. Embed in custom frame
+        self.canvas_widget = FigureCanvasTkAgg(fig, master=self.bt_chart_frame)
+        self.canvas_widget.draw()
+        self.canvas_widget.get_tk_widget().pack(fill='both', expand=True)
+
+        # --- Populate Dividend Table ---
+        self._populate_div_table(bt_obj)
+
+    def _populate_div_table(self, bt_obj):
+        # Clear existing
+        self.div_tree.delete(*self.div_tree.get_children())
+        self.div_tree["columns"] = []
+        
+        if not bt_obj.daily_dividends:
+             # No divs
+             return
+
+        # Create DataFrame
+        df_divs = pd.DataFrame.from_dict(bt_obj.daily_dividends, orient='index', columns=['Dividend'])
+        df_divs.index = pd.to_datetime(df_divs.index)
+        df_divs['Year'] = df_divs.index.year
+        df_divs['Month'] = df_divs.index.month
+        
+        # Pivot: Index=Year, Columns=Month
+        monthly_pivot = df_divs.pivot_table(index='Year', columns='Month', values='Dividend', aggfunc='sum').fillna(0)
+        
+        # Calculate Total for Year
+        monthly_pivot['Total'] = monthly_pivot.sum(axis=1)
+        
+        # Columns Setup (Year + 1..12 + Total)
+        # Map 1..12 to Jan..Dec
+        month_map = {1: 'Jan', 2: 'Feb', 3: 'Mar', 4: 'Apr', 5: 'May', 6: 'Jun', 
+                     7: 'Jul', 8: 'Aug', 9: 'Sep', 10: 'Oct', 11: 'Nov', 12: 'Dec'}
+                     
+        # Reorder columns to ensure 1..12 then Total
+        # The pivot might miss some months if no divs ever paid in that month across all years? 
+        # Better to force reindex.
+        all_months = list(range(1, 13))
+        monthly_pivot = monthly_pivot.reindex(columns=all_months + ['Total'], fill_value=0)
+        
+        # Rename columns
+        col_names = ['Year'] + [month_map[m] for m in all_months] + ['Total']
+        self.div_tree["columns"] = col_names
+        
+        for col in col_names:
+            self.div_tree.heading(col, text=col)
+            self.div_tree.column(col, width=60, anchor='e')
+        self.div_tree.column("Year", width=60, anchor='center')
+        self.div_tree.column("Total", width=80, anchor='e')
+            
+        # Insert Data
+        for year, row in monthly_pivot.iterrows():
+            values = [year]
+            for m in all_months:
+                val = row[m]
+                values.append(f"{val:,.2f}")
+            values.append(f"{row['Total']:,.2f}")
+            
+            self.div_tree.insert("", "end", values=values)
+
+
+    def _bt_error(self, msg):
+        self.bt_text_output.insert(tk.END, f"\nERROR: {msg}")
+        messagebox.showerror("Backtest Error", msg)
+        self.btn_run_bt.config(state='normal')
+
+if __name__ == "__main__":
+    app = FinancialDashboardArgs()
+    app.mainloop()

@@ -1,4 +1,4 @@
-#python -m pip install fundamentus
+pip install fundamentus
 import fundamentus
 
 detalhes_fii = fundamentus.get_detalhes_fii('MXRF11')
