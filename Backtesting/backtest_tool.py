@@ -8,15 +8,20 @@ import requests
 import io
 
 class PortfolioBacktester:
-    def __init__(self, tickers, initial_investment, monthly_investment, start_date, end_date=None, benchmark_rate=0.10):
+    def __init__(self, tickers, initial_investment, monthly_investment, start_date, end_date=None, benchmark_rate=0.10, risk_free_allocation=0.0):
         """
         initial_investment: Amount in BRL
         monthly_investment: Amount in BRL
         benchmark_rate: Annual risk-free rate (decimal, e.g., 0.10 for 10%)
+        risk_free_allocation: Fraction of investment to go to Risk Free Asset (0.0 to 1.0)
         """
         self.tickers = tickers
         self.initial_investment = initial_investment
         self.monthly_investment = monthly_investment
+        self.start_date = start_date
+        self.end_date = end_date if end_date else datetime.now().strftime('%Y-%m-%d')
+        self.benchmark_rate = benchmark_rate
+        self.risk_free_allocation = risk_free_allocation
         self.start_date = start_date
         self.end_date = end_date if end_date else datetime.now().strftime('%Y-%m-%d')
         self.benchmark_rate = benchmark_rate
@@ -40,6 +45,18 @@ class PortfolioBacktester:
         
         # Download Stock Data
         data = yf.download(self.tickers, start=self.start_date, end=self.end_date, actions=True)
+        
+        # Download Benchmark Data (IBOV)
+        print("Fetching Ibovespa data...")
+        try:
+             ibov_data = yf.download("^BVSP", start=self.start_date, end=self.end_date)['Close']
+             if isinstance(ibov_data, pd.DataFrame):
+                 ibov_data = ibov_data.iloc[:, 0]
+             self.ibov_series = ibov_data.ffill().bfill()
+        except Exception as e:
+             print(f"Could not fetch Ibovespa: {e}")
+             self.ibov_series = None
+
         
         # Handle Multi-Index (Close, Dividends)
         # Handle Multi-Index (Close, Dividends)
@@ -66,7 +83,7 @@ class PortfolioBacktester:
             
             # Align Currency Date with Stock Date
             self.currency_rate = self.currency_rate.reindex(self.price_data.index).ffill().bfill()
-
+ 
             # Convert US stocks to BRL
             for ticker in us_stocks:
                 if ticker in self.price_data.columns:
@@ -83,6 +100,13 @@ class PortfolioBacktester:
              self.price_data.index = self.price_data.index.tz_localize(None)
              
         self.div_data = self.div_data.loc[self.price_data.index].fillna(0)
+        
+        # Align IBOV
+        if self.ibov_series is not None:
+            # Ensure Naive
+             if self.ibov_series.index.tz is not None:
+                  self.ibov_series.index = self.ibov_series.index.tz_localize(None)
+             self.ibov_series = self.ibov_series.reindex(self.price_data.index).ffill()
         
         # Fetch Risk Free
         self.fetch_risk_free_data()
@@ -143,6 +167,13 @@ class PortfolioBacktester:
         portfolio_reinvest = []
         invested_capital = 0.0
         
+        # Risk Free Asset Tracker (Same for both strategies as we just accumulate allocation)
+        rf_asset_value = 0.0 
+        
+        # Benchmark Tracker (Ibovespa)
+        ibov_shares = 0.0
+        ibov_curve = []
+        
         # 2. Strategy: No Reinvest (Take Dividends as Cash)
         shares_no_reinvest = {t: 0.0 for t in self.tickers}
         cash_wallet_no_reinvest = 0.0 # Accumulated dividends
@@ -153,22 +184,33 @@ class PortfolioBacktester:
         last_month = dates[0].month
         
         # Initial Deposit
-        cash_reinvest += self.initial_investment
-        cash_residual_no_reinvest += self.initial_investment
+        # Split Allocation
+        rf_initial = self.initial_investment * self.risk_free_allocation
+        stock_initial = self.initial_investment * (1 - self.risk_free_allocation)
+        
+        rf_asset_value += rf_initial
+        
+        cash_reinvest += stock_initial
+        cash_residual_no_reinvest += stock_initial
         invested_capital += self.initial_investment
         
-        # Distribute initial cash equally
+        # Initialize Ibovespa Benchmark (Assuming 100% allocation to IBOV)
+        if hasattr(self, 'ibov_series') and self.ibov_series is not None:
+             ibov_start_price = self.ibov_series.iloc[0]
+             if ibov_start_price > 0:
+                  ibov_shares = self.initial_investment / ibov_start_price
+        
+        # Distribute initial cash equally among stocks
         weight = 1.0 / len(self.tickers)
         
         for t in self.tickers:
             price = self.price_data.iloc[0][t]
             if not pd.isna(price) and price > 0:
                 # Buy for Reinvest Strat
-                alloc = self.initial_investment * weight
+                alloc = stock_initial * weight
                 bought = alloc / price
                 shares_reinvest[t] += bought
-                cash_reinvest -= alloc # Simplified: assume fractional shares or full usage
-                # Better: cash_reinvest -= bought * price (results in ~0)
+                cash_reinvest -= alloc 
                 
                 # Buy for No Reinvest Strat
                 shares_no_reinvest[t] += bought
@@ -178,11 +220,23 @@ class PortfolioBacktester:
         # To be precise let's just assume we track Value directly: Value = Shares * Price + Cash
         # But for Dividends logic we need Shares count.
         
+        if self.risk_free_daily_series is None:
+             # Fallback just in case
+             daily_fixed_rate = (1 + self.benchmark_rate) ** (1/252) - 1
+             rf_series_fallback = pd.Series(daily_fixed_rate, index=dates)
+        
         for i in range(n_days):
             date = dates[i]
             prices = self.price_data.iloc[i]
             divs = self.div_data.iloc[i]
             
+            # Grow Risk Free Asset
+            if i > 0:
+                if self.risk_free_daily_series is not None:
+                     r_day = self.risk_free_daily_series.get(date, 0.0)
+                else:
+                     r_day = rf_series_fallback.get(date, 0.0)
+                rf_asset_value *= (1 + r_day)
             
             # Flow Tracker
             current_flow = 0.0
@@ -194,12 +248,19 @@ class PortfolioBacktester:
                 current_flow = self.monthly_investment
                 invested_capital += self.monthly_investment
                 
-                # REINVEST STRATEGY: Pool + Monthly
-                cash_reinvest += self.monthly_investment
+                # Split Monthly Allocation
+                rf_monthly = self.monthly_investment * self.risk_free_allocation
+                stock_monthly = self.monthly_investment * (1 - self.risk_free_allocation)
+                
+                # Add to RF Asset
+                rf_asset_value += rf_monthly
+                
+                # REINVEST STRATEGY: Pool + Monthly Stock Part
+                cash_reinvest += stock_monthly
                 pool_to_invest = cash_reinvest
                 
-                # NO REINVEST STRATEGY: Just Monthly
-                to_invest_nr = self.monthly_investment
+                # NO REINVEST STRATEGY: Just Monthly Stock Part
+                to_invest_nr = stock_monthly
 
                 
                 # Buy Stocks (Equal Weight)
@@ -215,6 +276,13 @@ class PortfolioBacktester:
                         alloc_nr = to_invest_nr * weight
                         bought_nr = alloc_nr / price
                         shares_no_reinvest[t] += bought_nr
+                
+                # Buy Ibovespa (Benchmark)
+                if hasattr(self, 'ibov_series') and self.ibov_series is not None:
+                     ibov_price = self.ibov_series.iloc[i]
+                     if ibov_price > 0:
+                          # Benchmark gets full monthly investment (Passive 100% Stock Benchmark)
+                          ibov_shares += self.monthly_investment / ibov_price
                 
                 # Reset cash pool
                 cash_reinvest = 0.0
@@ -259,6 +327,10 @@ class PortfolioBacktester:
             
             # Add Cash Pools to Value
             val_reinvest += cash_reinvest
+            
+            # Add RF Asset to Value
+            val_reinvest += rf_asset_value
+            val_no_reinvest += rf_asset_value
 
             
             # No Reinvest strat has extra cash from dividends
@@ -266,6 +338,15 @@ class PortfolioBacktester:
             
             portfolio_reinvest.append(val_reinvest)
             portfolio_no_reinvest.append(val_no_reinvest)
+            
+            # Ibovespa Value
+            if hasattr(self, 'ibov_series') and self.ibov_series is not None:
+                 ib_p = self.ibov_series.iloc[i]
+                 # If NaN, use last known? Series is ffilled.
+                 ib_val = ibov_shares * ib_p
+                 ibov_curve.append(ib_val)
+            else:
+                 ibov_curve.append(0.0)
             
             # Calculate Daily Returns adjusted for Cash Flow
             # r_t = (EndValue - (PrevValue + CashFlow)) / (PrevValue + CashFlow)
@@ -285,7 +366,8 @@ class PortfolioBacktester:
             
         self.results = pd.DataFrame({
             'With Reinvestment': portfolio_reinvest,
-            'Without Reinvestment': portfolio_no_reinvest
+            'Without Reinvestment': portfolio_no_reinvest,
+            'Ibovespa': ibov_curve
         }, index=dates)
         
         # Risk Free Comparison

@@ -109,9 +109,14 @@ class FinancialDashboardArgs(tk.Tk):
         self.bt_start_entry = ttk.Entry(input_frame, width=15)
         self.bt_start_entry.grid(row=2, column=1, sticky='w', padx=5, pady=5)
         self.bt_start_entry.insert(0, "2018-01-01")
+
+        ttk.Label(input_frame, text="Risk Free Alloc (%):").grid(row=2, column=2, sticky='w', padx=5, pady=5)
+        self.bt_rf_alloc_entry = ttk.Entry(input_frame, width=15)
+        self.bt_rf_alloc_entry.grid(row=2, column=3, sticky='w', padx=5, pady=5)
+        self.bt_rf_alloc_entry.insert(0, "0")
         
         self.btn_run_bt = ttk.Button(input_frame, text="Run Backtest", command=self.run_backtest_thread)
-        self.btn_run_bt.grid(row=2, column=3, sticky='e', padx=5, pady=5)
+        self.btn_run_bt.grid(row=3, column=3, sticky='e', padx=5, pady=5)
         
         # Results Frame
         self.bt_results_frame = ttk.LabelFrame(self.tab_bt, text="Performance Outcomes", padding=10)
@@ -240,8 +245,9 @@ class FinancialDashboardArgs(tk.Tk):
         init_str = self.bt_initial_entry.get()
         monthly_str = self.bt_monthly_entry.get()
         start_date = self.bt_start_entry.get()
+        rf_alloc_str = self.bt_rf_alloc_entry.get()
         
-        if not tickers_str or not init_str or not monthly_str or not start_date:
+        if not tickers_str or not init_str or not monthly_str or not start_date or not rf_alloc_str:
             messagebox.showwarning("Missing Inputs", "Please fill all fields.")
             return
             
@@ -259,8 +265,14 @@ class FinancialDashboardArgs(tk.Tk):
         try:
             initial = float(init_str)
             monthly = float(monthly_str)
+            rf_alloc = float(rf_alloc_str)
+            if rf_alloc < 0 or rf_alloc > 100:
+                 messagebox.showerror("Invalid Input", "Risk Free Allocation must be between 0 and 100.")
+                 return
+            rf_alloc_decimal = rf_alloc / 100.0
+            
         except ValueError:
-            messagebox.showerror("Invalid Number", "Investments must be numbers.")
+            messagebox.showerror("Invalid Number", "Investments/Allocation must be numbers.")
             return
             
         self.btn_run_bt.config(state='disabled')
@@ -270,12 +282,12 @@ class FinancialDashboardArgs(tk.Tk):
         # Clear previous plot if any - Managed in _show_bt_results now
 
         
-        t = threading.Thread(target=self._process_backtest, args=(tickers, initial, monthly, start_date))
+        t = threading.Thread(target=self._process_backtest, args=(tickers, initial, monthly, start_date, rf_alloc_decimal))
         t.start()
         
-    def _process_backtest(self, tickers, initial, monthly, start_date):
+    def _process_backtest(self, tickers, initial, monthly, start_date, rf_alloc_decimal):
         try:
-            bt = backtest_tool.PortfolioBacktester(tickers, initial, monthly, start_date)
+            bt = backtest_tool.PortfolioBacktester(tickers, initial, monthly, start_date, risk_free_allocation=rf_alloc_decimal)
             bt.run() # This fetches data and calcs
             
             # Calc Metrics
@@ -330,6 +342,8 @@ class FinancialDashboardArgs(tk.Tk):
         results = bt_obj.results
         ax.plot(results.index, results['With Reinvestment'], label='With Divs')
         ax.plot(results.index, results['Without Reinvestment'], label='No Reinvest')
+        if 'Ibovespa' in results.columns:
+             ax.plot(results.index, results['Ibovespa'], label='Ibovespa', linestyle='-', color='gray', alpha=0.6)
         ax.plot(results.index, results['Risk Free'], label='Risk Free', linestyle='--')
         
         ax.set_title('Portfolio Performance')
