@@ -31,7 +31,7 @@ class FinancialDashboardArgs(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Factor Investing Dashboard")
-        self.geometry("900x700")
+        self.geometry("900x720")
         
         # Style
         style = ttk.Style()
@@ -95,7 +95,7 @@ class FinancialDashboardArgs(tk.Tk):
         ttk.Label(input_frame, text="Tickers (comma sep):").grid(row=0, column=0, sticky='w', padx=5, pady=5)
         self.bt_tickers_entry = ttk.Entry(input_frame, width=50)
         self.bt_tickers_entry.grid(row=0, column=1, columnspan=3, sticky='w', padx=5, pady=5)
-        self.bt_tickers_entry.insert(0, "VALE3.SA, PETR4.SA, ITUB4.SA, WEGE3.SA")
+        self.bt_tickers_entry.insert(0, "BBAS3, BBSE3, CMIG4, CXSE3, PETR4")
         
         ttk.Label(input_frame, text="Initial Invest (BRL):").grid(row=1, column=0, sticky='w', padx=5, pady=5)
         self.bt_initial_entry = ttk.Entry(input_frame, width=15)
