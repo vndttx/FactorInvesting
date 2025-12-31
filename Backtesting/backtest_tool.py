@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 import matplotlib.ticker as mtick
 import requests
 import io
+import scipy.stats as stats
 
 class PortfolioBacktester:
     def __init__(self, tickers, initial_investment, monthly_investment, start_date, end_date=None, benchmark_rate=0.10, risk_free_allocation=0.0):
@@ -539,9 +540,38 @@ class PortfolioBacktester:
             "Total Return": total_return,
             "CAGR": cagr,
             "Volatility": volatility,
-            "Sharpe Ratio": sharpe,
             "Max Drawdown": max_drawdown
         }
+
+    def calculate_beta(self, portfolio_returns, benchmark_name='^BVSP'):
+        """
+        Calculates Beta of the portfolio returns against the benchmark (checking Ibovespa first).
+        """
+        if self.ibov_series is None:
+             return 0.0
+             
+        # Align Series
+        # Reconstruct Benchmark Returns
+        bench_ret = self.ibov_series.pct_change().dropna()
+        port_ret = pd.Series(portfolio_returns, index=self.price_data.index).dropna()
+        
+        # Inner Join to ensure same dates
+        df_join = pd.concat([port_ret, bench_ret], axis=1, join='inner').dropna()
+        
+        if df_join.empty:
+            return 0.0
+            
+        rp = df_join.iloc[:, 0]
+        rb = df_join.iloc[:, 1]
+        
+        # Beta = Cov(Rp, Rb) / Var(Rb)
+        covariance = np.cov(rp, rb)[0, 1]
+        variance = np.var(rb)
+        
+        if variance == 0:
+            return 0.0
+            
+        return covariance / variance
 
 # Example Usage Block
 if __name__ == "__main__":

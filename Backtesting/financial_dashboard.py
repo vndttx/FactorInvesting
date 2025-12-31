@@ -19,7 +19,9 @@ if backtesting_dir not in sys.path:
 try:
     import valuation
     import backtest_tool
+    import optimization_tool
     import pandas as pd
+    from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 except ImportError as e:
     messagebox.showerror("Import Error", f"Could not import modules from Backtesting folder.\nError: {e}")
     sys.exit(1)
@@ -39,9 +41,9 @@ class FinancialDashboardArgs(tk.Tk):
         self.notebook = ttk.Notebook(self)
         self.notebook.pack(fill='both', expand=True, padx=10, pady=10)
         
-        # Tabs
         self.create_valuation_tab()
         self.create_backtest_tab()
+        self.create_optimization_tab()
         
     def create_valuation_tab(self):
         self.tab_val = ttk.Frame(self.notebook)
@@ -294,6 +296,13 @@ class FinancialDashboardArgs(tk.Tk):
             m_reinvest = bt.calculate_metrics(bt.daily_returns_reinvest, bt.risk_free_daily_series.values)
             m_no_reinvest = bt.calculate_metrics(bt.daily_returns_no_reinvest, bt.risk_free_daily_series.values)
             
+            # Beta Calculation
+            beta_reinvest = bt.calculate_beta(bt.daily_returns_reinvest)
+            beta_no_reinvest = bt.calculate_beta(bt.daily_returns_no_reinvest)
+            
+            m_reinvest["Beta (vs Ibov)"] = beta_reinvest
+            m_no_reinvest["Beta (vs Ibov)"] = beta_no_reinvest
+            
             # Format Output
             output = []
             output.append("\n=== PERFORMANCE METRICS ===\n")
@@ -424,6 +433,168 @@ class FinancialDashboardArgs(tk.Tk):
         self.bt_text_output.insert(tk.END, f"\nERROR: {msg}")
         messagebox.showerror("Backtest Error", msg)
         self.btn_run_bt.config(state='normal')
+        
+    # --- OPTIMIZATION TAB LOGIC ---
+    def create_optimization_tab(self):
+        self.tab_opt = ttk.Frame(self.notebook)
+        self.notebook.add(self.tab_opt, text="Portfolio Optimization")
+        
+        # Input Frame
+        input_frame = ttk.LabelFrame(self.tab_opt, text="Configuration", padding=10)
+        input_frame.pack(fill='x', padx=10, pady=10)
+        
+        ttk.Label(input_frame, text="Tickers (comma sep):").grid(row=0, column=0, sticky='w', padx=5, pady=5)
+        self.opt_tickers_entry = ttk.Entry(input_frame, width=50)
+        self.opt_tickers_entry.grid(row=0, column=1, columnspan=2, sticky='w', padx=5, pady=5)
+        self.opt_tickers_entry.insert(0, "VALE3.SA, PETR4.SA, ITUB4.SA, WEGE3.SA, ELET3.SA")
+        
+        ttk.Label(input_frame, text="Start Date:").grid(row=1, column=0, sticky='w', padx=5, pady=5)
+        self.opt_start_entry = ttk.Entry(input_frame, width=15)
+        self.opt_start_entry.grid(row=1, column=1, sticky='w', padx=5, pady=5)
+        self.opt_start_entry.insert(0, "2020-01-01")
+        
+        self.btn_import_bt = ttk.Button(input_frame, text="Import from Backtest", command=self.import_tickers_from_bt)
+        self.btn_import_bt.grid(row=0, column=3, sticky='w', padx=5, pady=5)
+        
+        self.btn_run_opt = ttk.Button(input_frame, text="Optimize Portfolio", command=self.run_optimization_thread)
+        self.btn_run_opt.grid(row=1, column=3, sticky='e', padx=5, pady=5)
+        
+        # Output Frame
+        self.opt_results_frame = ttk.LabelFrame(self.tab_opt, text="Results", padding=10)
+        self.opt_results_frame.pack(fill='both', expand=True, padx=10, pady=10)
+        
+        # Split Results: Charts (Left 60%) | Weights (Right 40%)
+        # For charts, use a Notebook to toggle Frontier vs Performance
+        self.opt_chart_notebook = ttk.Notebook(self.opt_results_frame)
+        self.opt_chart_notebook.pack(side='left', fill='both', expand=True, padx=5)
+        
+        self.opt_frontier_tab = ttk.Frame(self.opt_chart_notebook)
+        self.opt_chart_notebook.add(self.opt_frontier_tab, text="Efficient Frontier")
+        
+        self.opt_perf_tab = ttk.Frame(self.opt_chart_notebook)
+        self.opt_chart_notebook.add(self.opt_perf_tab, text="Historical Performance")
+        
+        self.opt_weights_frame = ttk.Frame(self.opt_results_frame)
+        self.opt_weights_frame.pack(side='right', fill='y', padx=5)
+        
+        # Weights Treeview
+        columns = ("Stock", "Max Sharpe", "Min Vol")
+        self.opt_tree = ttk.Treeview(self.opt_weights_frame, columns=columns, show='headings', height=15)
+        for col in columns:
+            self.opt_tree.heading(col, text=col)
+            self.opt_tree.column(col, width=90, anchor='center')
+        self.opt_tree.pack(fill='both', expand=True)
+
+    def import_tickers_from_bt(self):
+        bt_text = self.bt_tickers_entry.get()
+        self.opt_tickers_entry.delete(0, tk.END)
+        self.opt_tickers_entry.insert(0, bt_text)
+
+    def run_optimization_thread(self):
+        tickers_str = self.opt_tickers_entry.get()
+        start_date = self.opt_start_entry.get()
+        
+        if not tickers_str or not start_date:
+            messagebox.showwarning("Input Error", "Please fill all fields.")
+            return
+
+        raw_tickers = [t.strip().upper() for t in tickers_str.split(',') if t.strip()]
+        tickers = []
+        for t in raw_tickers:
+           tickers.append(t if ('.' in t or '=' in t) else f"{t}.SA")
+            
+        self.btn_run_opt.config(state='disabled')
+        self.opt_tree.delete(*self.opt_tree.get_children())
+        # Clear Charts
+        for widget in self.opt_frontier_tab.winfo_children(): widget.destroy()
+        for widget in self.opt_perf_tab.winfo_children(): widget.destroy()
+        
+        lbl = ttk.Label(self.opt_frontier_tab, text="Optimizing... This may take a moment.")
+        lbl.pack(pady=20)
+        
+        t = threading.Thread(target=self._process_optimization, args=(tickers, start_date))
+        t.start()
+        
+    def _process_optimization(self, tickers, start_date):
+        try:
+            opt = optimization_tool.PortfolioOptimizer(tickers, start_date)
+            # Run optimization
+            sim_results, max_sharpe, min_vol = opt.optimize(num_portfolios=5000)
+            
+            self.after(0, lambda: self._show_optimization_results(sim_results, max_sharpe, min_vol))
+            
+        except Exception as e:
+            self.after(0, lambda: messagebox.showerror("Optimization Error", str(e)))
+            self.after(0, lambda: self.btn_run_opt.config(state='normal'))
+
+    def _show_optimization_results(self, sim_results, max_sharpe, min_vol):
+        self.btn_run_opt.config(state='normal')
+        
+        # 1. Update Table
+        self.opt_tree.delete(*self.opt_tree.get_children())
+        tickers = max_sharpe['Weights'].keys()
+        
+        for t in tickers:
+            w_sharpe = max_sharpe['Weights'].get(t, 0)
+            w_vol = min_vol['Weights'].get(t, 0)
+            self.opt_tree.insert("", "end", values=(t, f"{w_sharpe:.2%}", f"{w_vol:.2%}"))
+            
+        # Add Metrics Rows
+        self.opt_tree.insert("", "end", values=("---", "---", "---"))
+        self.opt_tree.insert("", "end", values=("Return", f"{max_sharpe['Return']:.2%}", f"{min_vol['Return']:.2%}"))
+        self.opt_tree.insert("", "end", values=("Volatility", f"{max_sharpe['Volatility']:.2%}", f"{min_vol['Volatility']:.2%}"))
+        self.opt_tree.insert("", "end", values=("Sharpe", f"{max_sharpe['Sharpe']:.2f}", f"{min_vol['Sharpe']:.2f}"))
+        self.opt_tree.insert("", "end", values=("Max Drawdown", f"{max_sharpe['MaxDrawdown']:.2%}", f"{min_vol['MaxDrawdown']:.2%}"))
+        
+        # 2. Update Frontier Chart
+        for widget in self.opt_frontier_tab.winfo_children(): widget.destroy()
+            
+        fig = Figure(figsize=(5, 4), dpi=100)
+        ax = fig.add_subplot(111)
+        
+        # Scatter Plot of all Sims
+        # results[0] = ret, results[1] = vol
+        sc = ax.scatter(sim_results[1,:], sim_results[0,:], c=sim_results[2,:], cmap='viridis', s=2, alpha=0.5)
+        fig.colorbar(sc, ax=ax, label='Sharpe Ratio')
+        
+        # Highlight Points
+        ax.scatter(max_sharpe['Volatility'], max_sharpe['Return'], c='red', marker='*', s=150, label='Max Sharpe')
+        ax.scatter(min_vol['Volatility'], min_vol['Return'], c='blue', marker='*', s=150, label='Min Volatility')
+        
+        ax.set_title("Efficient Frontier")
+        ax.set_xlabel("Annual Volatility")
+        ax.set_ylabel("Annual Return")
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+        
+        fig.tight_layout()
+        
+        canvas = FigureCanvasTkAgg(fig, master=self.opt_frontier_tab)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill='both', expand=True)
+
+        # 3. Update Performance Chart
+        for widget in self.opt_perf_tab.winfo_children(): widget.destroy()
+        
+        fig2 = Figure(figsize=(5, 4), dpi=100)
+        ax2 = fig2.add_subplot(111)
+        
+        # Plot Equity Curves
+        # Check if vectors present
+        if 'EquityCurve' in max_sharpe:
+            ax2.plot(max_sharpe['EquityCurve'].index, max_sharpe['EquityCurve'], label='Max Sharpe', color='red')
+            ax2.plot(min_vol['EquityCurve'].index, min_vol['EquityCurve'], label='Min Volatility', color='blue')
+        
+        ax2.set_title("Historical Performance (Base 100)")
+        ax2.set_ylabel("Portfolio Value")
+        ax2.legend()
+        ax2.grid(True)
+        
+        fig2.tight_layout()
+        
+        canvas2 = FigureCanvasTkAgg(fig2, master=self.opt_perf_tab)
+        canvas2.draw()
+        canvas2.get_tk_widget().pack(fill='both', expand=True)
 
 if __name__ == "__main__":
     app = FinancialDashboardArgs()
