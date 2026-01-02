@@ -93,11 +93,30 @@ class PortfolioOptimizer:
         max_sharpe_idx = np.argmax(results[2])
         min_vol_idx = np.argmin(results[1])
         
+        # --- NEW: Optimal (Distance to Utopia) ---
+        # Normalize returns and volatility to 0-1 scale for fair distance calc
+        rets = results[0]
+        vols = results[1]
+        
+        # Utopia point: Max Return, Min Volatility
+        # We want to minimize distance to (1, 0) in normalized space
+        # where 1 is best return, 0 is best volatility (lowest)
+        
+        norm_ret = (rets - rets.min()) / (rets.max() - rets.min())
+        norm_vol = (vols - vols.min()) / (vols.max() - vols.min())
+        
+        # Utopia: Max Return (norm=1), Min Vol (norm=0)
+        # Distance = sqrt( (nR - 1)^2 + (nV - 0)^2 )
+        distances = np.sqrt( (norm_ret - 1)**2 + (norm_vol - 0)**2 )
+        optimal_idx = np.argmin(distances)
+        
         w_sharpe = weights_record[max_sharpe_idx]
         w_vol = weights_record[min_vol_idx]
+        w_opt = weights_record[optimal_idx]
         
         dd_sharpe, curve_sharpe = calc_metrics(w_sharpe)
         dd_vol, curve_vol = calc_metrics(w_vol)
+        dd_opt, curve_opt = calc_metrics(w_opt)
         
         max_sharpe_port = {
             'Return': results[0, max_sharpe_idx],
@@ -117,4 +136,13 @@ class PortfolioOptimizer:
             'EquityCurve': curve_vol
         }
         
-        return results, max_sharpe_port, min_vol_port
+        optimal_port = {
+            'Return': results[0, optimal_idx],
+            'Volatility': results[1, optimal_idx],
+            'Sharpe': results[2, optimal_idx],
+            'MaxDrawdown': dd_opt,
+            'Weights': dict(zip(self.tickers, w_opt)),
+            'EquityCurve': curve_opt
+        }
+        
+        return results, max_sharpe_port, min_vol_port, optimal_port

@@ -20,6 +20,7 @@ try:
     import valuation
     import backtest_tool
     import optimization_tool
+    import market_breadth
     import pandas as pd
     from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 except ImportError as e:
@@ -44,6 +45,7 @@ class FinancialDashboardArgs(tk.Tk):
         self.create_valuation_tab()
         self.create_backtest_tab()
         self.create_optimization_tab()
+        self.create_breadth_tab()
         
     def create_valuation_tab(self):
         self.tab_val = ttk.Frame(self.notebook)
@@ -105,12 +107,12 @@ class FinancialDashboardArgs(tk.Tk):
         ttk.Label(input_frame, text="Monthly Invest (BRL):").grid(row=1, column=2, sticky='w', padx=5, pady=5)
         self.bt_monthly_entry = ttk.Entry(input_frame, width=15)
         self.bt_monthly_entry.grid(row=1, column=3, sticky='w', padx=5, pady=5)
-        self.bt_monthly_entry.insert(0, "500")
+        self.bt_monthly_entry.insert(0, "600")
         
         ttk.Label(input_frame, text="Start Date (YYYY-MM-DD):").grid(row=2, column=0, sticky='w', padx=5, pady=5)
         self.bt_start_entry = ttk.Entry(input_frame, width=15)
         self.bt_start_entry.grid(row=2, column=1, sticky='w', padx=5, pady=5)
-        self.bt_start_entry.insert(0, "2018-01-01")
+        self.bt_start_entry.insert(0, "2015-01-01")
 
         ttk.Label(input_frame, text="Risk Free Alloc (%):").grid(row=2, column=2, sticky='w', padx=5, pady=5)
         self.bt_rf_alloc_entry = ttk.Entry(input_frame, width=15)
@@ -446,12 +448,12 @@ class FinancialDashboardArgs(tk.Tk):
         ttk.Label(input_frame, text="Tickers (comma sep):").grid(row=0, column=0, sticky='w', padx=5, pady=5)
         self.opt_tickers_entry = ttk.Entry(input_frame, width=50)
         self.opt_tickers_entry.grid(row=0, column=1, columnspan=2, sticky='w', padx=5, pady=5)
-        self.opt_tickers_entry.insert(0, "VALE3.SA, PETR4.SA, ITUB4.SA, WEGE3.SA, ELET3.SA")
+        self.opt_tickers_entry.insert(0, "PETR4, UNIP6, CMIG4, BBAS3, BBSE3, ITUB4, CXSE3, SLCE3")
         
         ttk.Label(input_frame, text="Start Date:").grid(row=1, column=0, sticky='w', padx=5, pady=5)
         self.opt_start_entry = ttk.Entry(input_frame, width=15)
         self.opt_start_entry.grid(row=1, column=1, sticky='w', padx=5, pady=5)
-        self.opt_start_entry.insert(0, "2020-01-01")
+        self.opt_start_entry.insert(0, "2010-01-01")
         
         self.btn_import_bt = ttk.Button(input_frame, text="Import from Backtest", command=self.import_tickers_from_bt)
         self.btn_import_bt.grid(row=0, column=3, sticky='w', padx=5, pady=5)
@@ -478,7 +480,7 @@ class FinancialDashboardArgs(tk.Tk):
         self.opt_weights_frame.pack(side='right', fill='y', padx=5)
         
         # Weights Treeview
-        columns = ("Stock", "Max Sharpe", "Min Vol")
+        columns = ("Stock", "Max Sharpe", "Min Vol", "Optimal")
         self.opt_tree = ttk.Treeview(self.opt_weights_frame, columns=columns, show='headings', height=15)
         for col in columns:
             self.opt_tree.heading(col, text=col)
@@ -519,15 +521,15 @@ class FinancialDashboardArgs(tk.Tk):
         try:
             opt = optimization_tool.PortfolioOptimizer(tickers, start_date)
             # Run optimization
-            sim_results, max_sharpe, min_vol = opt.optimize(num_portfolios=5000)
+            sim_results, max_sharpe, min_vol, optimal = opt.optimize(num_portfolios=5000)
             
-            self.after(0, lambda: self._show_optimization_results(sim_results, max_sharpe, min_vol))
+            self.after(0, lambda: self._show_optimization_results(sim_results, max_sharpe, min_vol, optimal))
             
         except Exception as e:
             self.after(0, lambda: messagebox.showerror("Optimization Error", str(e)))
             self.after(0, lambda: self.btn_run_opt.config(state='normal'))
 
-    def _show_optimization_results(self, sim_results, max_sharpe, min_vol):
+    def _show_optimization_results(self, sim_results, max_sharpe, min_vol, optimal):
         self.btn_run_opt.config(state='normal')
         
         # 1. Update Table
@@ -537,14 +539,15 @@ class FinancialDashboardArgs(tk.Tk):
         for t in tickers:
             w_sharpe = max_sharpe['Weights'].get(t, 0)
             w_vol = min_vol['Weights'].get(t, 0)
-            self.opt_tree.insert("", "end", values=(t, f"{w_sharpe:.2%}", f"{w_vol:.2%}"))
+            w_opt = optimal['Weights'].get(t, 0)
+            self.opt_tree.insert("", "end", values=(t, f"{w_sharpe:.2%}", f"{w_vol:.2%}", f"{w_opt:.2%}"))
             
         # Add Metrics Rows
-        self.opt_tree.insert("", "end", values=("---", "---", "---"))
-        self.opt_tree.insert("", "end", values=("Return", f"{max_sharpe['Return']:.2%}", f"{min_vol['Return']:.2%}"))
-        self.opt_tree.insert("", "end", values=("Volatility", f"{max_sharpe['Volatility']:.2%}", f"{min_vol['Volatility']:.2%}"))
-        self.opt_tree.insert("", "end", values=("Sharpe", f"{max_sharpe['Sharpe']:.2f}", f"{min_vol['Sharpe']:.2f}"))
-        self.opt_tree.insert("", "end", values=("Max Drawdown", f"{max_sharpe['MaxDrawdown']:.2%}", f"{min_vol['MaxDrawdown']:.2%}"))
+        self.opt_tree.insert("", "end", values=("---", "---", "---", "---"))
+        self.opt_tree.insert("", "end", values=("Return", f"{max_sharpe['Return']:.2%}", f"{min_vol['Return']:.2%}", f"{optimal['Return']:.2%}"))
+        self.opt_tree.insert("", "end", values=("Volatility", f"{max_sharpe['Volatility']:.2%}", f"{min_vol['Volatility']:.2%}", f"{optimal['Volatility']:.2%}"))
+        self.opt_tree.insert("", "end", values=("Sharpe", f"{max_sharpe['Sharpe']:.2f}", f"{min_vol['Sharpe']:.2f}", f"{optimal['Sharpe']:.2f}"))
+        self.opt_tree.insert("", "end", values=("Max Drawdown", f"{max_sharpe['MaxDrawdown']:.2%}", f"{min_vol['MaxDrawdown']:.2%}", f"{optimal['MaxDrawdown']:.2%}"))
         
         # 2. Update Frontier Chart
         for widget in self.opt_frontier_tab.winfo_children(): widget.destroy()
@@ -560,6 +563,7 @@ class FinancialDashboardArgs(tk.Tk):
         # Highlight Points
         ax.scatter(max_sharpe['Volatility'], max_sharpe['Return'], c='red', marker='*', s=150, label='Max Sharpe')
         ax.scatter(min_vol['Volatility'], min_vol['Return'], c='blue', marker='*', s=150, label='Min Volatility')
+        ax.scatter(optimal['Volatility'], optimal['Return'], c='green', marker='*', s=150, label='Optimal (Best Combo)')
         
         ax.set_title("Efficient Frontier")
         ax.set_xlabel("Annual Volatility")
@@ -584,6 +588,7 @@ class FinancialDashboardArgs(tk.Tk):
         if 'EquityCurve' in max_sharpe:
             ax2.plot(max_sharpe['EquityCurve'].index, max_sharpe['EquityCurve'], label='Max Sharpe', color='red')
             ax2.plot(min_vol['EquityCurve'].index, min_vol['EquityCurve'], label='Min Volatility', color='blue')
+            ax2.plot(optimal['EquityCurve'].index, optimal['EquityCurve'], label='Optimal', color='green')
         
         ax2.set_title("Historical Performance (Base 100)")
         ax2.set_ylabel("Portfolio Value")
@@ -595,6 +600,124 @@ class FinancialDashboardArgs(tk.Tk):
         canvas2 = FigureCanvasTkAgg(fig2, master=self.opt_perf_tab)
         canvas2.draw()
         canvas2.get_tk_widget().pack(fill='both', expand=True)
+
+        canvas2.get_tk_widget().pack(fill='both', expand=True)
+
+    # --- BREADTH TAB LOGIC ---
+    def create_breadth_tab(self):
+        self.tab_breadth = ttk.Frame(self.notebook)
+        self.notebook.add(self.tab_breadth, text="Market Breadth (Ibovespa)")
+        
+        # Controls
+        ctrl_frame = ttk.LabelFrame(self.tab_breadth, text="Controls", padding=10)
+        ctrl_frame.pack(fill='x', padx=10, pady=10)
+        
+        ttk.Label(ctrl_frame, text="Analyze stocks above Moving Averages (Fear & Greed Proxy)").pack(side='left', padx=10)
+        
+        self.var_full_market = tk.BooleanVar(value=False)
+        self.chk_full = ttk.Checkbutton(ctrl_frame, text="Scan Full B3 Market (Slower)", variable=self.var_full_market)
+        self.chk_full.pack(side='left', padx=10)
+        
+        self.btn_run_breadth = ttk.Button(ctrl_frame, text="Run Analysis", command=self.run_breadth_thread)
+        self.btn_run_breadth.pack(side='right', padx=10)
+        
+        # Results
+        self.breadth_results_frame = ttk.Frame(self.tab_breadth)
+        self.breadth_results_frame.pack(fill='both', expand=True, padx=10, pady=10)
+        
+        # Left: Chart
+        self.breadth_chart_frame = ttk.LabelFrame(self.breadth_results_frame, text="Breadth Chart")
+        self.breadth_chart_frame.pack(side='left', fill='both', expand=True, padx=5)
+        
+        # Right: Info/Stats
+        self.breadth_info_frame = ttk.LabelFrame(self.breadth_results_frame, text="Interpretation", width=300)
+        self.breadth_info_frame.pack(side='right', fill='y', padx=5)
+        
+        self.breadth_text = tk.Text(self.breadth_info_frame, width=40, height=20, wrap='word')
+        self.breadth_text.pack(fill='both', expand=True, padx=5, pady=5)
+        self.breadth_text.insert(tk.END, "Click 'Run Analysis' to see data.\n\n")
+        self.breadth_text.insert(tk.END, "Interpretation:\n")
+        self.breadth_text.insert(tk.END, "- > 80% Above MA200: Extreme Greed (Risk of correction)\n")
+        self.breadth_text.insert(tk.END, "- < 20% Above MA200: Extreme Fear (Potential bottom)\n")
+
+    def run_breadth_thread(self):
+        self.btn_run_breadth.config(state='disabled')
+        mode_text = "Full Market (Scraping Fundamentus...)" if self.var_full_market.get() else "~56 Ibovespa stocks"
+        self.breadth_text.delete("1.0", tk.END)
+        self.breadth_text.insert(tk.END, f"Fetching data for {mode_text}...\nThis may take a minute...")
+        
+        for widget in self.breadth_chart_frame.winfo_children(): widget.destroy()
+        
+        # Pass the mode
+        mode = 'full' if self.var_full_market.get() else 'default'
+        t = threading.Thread(target=self._process_breadth, args=(mode,))
+        t.start()
+        
+    def _process_breadth(self, mode):
+        try:
+            analyzer = market_breadth.BreadthAnalyzer(mode=mode)
+            metrics, details = analyzer.calculate_breadth()
+            
+            self.after(0, lambda: self._show_breadth_results(metrics))
+            
+        except Exception as e:
+            self.after(0, lambda: messagebox.showerror("Breadth Error", str(e)))
+            self.after(0, lambda: self.btn_run_breadth.config(state='normal'))
+
+    def _show_breadth_results(self, metrics):
+        self.btn_run_breadth.config(state='normal')
+        if not metrics:
+            self.breadth_text.insert(tk.END, "\nNo data returned.")
+            return
+
+        # 1. Update Text
+        self.breadth_text.delete("1.0", tk.END)
+        self.breadth_text.insert(tk.END, "=== Market Breadth ===\n\n")
+        
+        for ma, pct in metrics.items():
+            self.breadth_text.insert(tk.END, f"{ma}: {pct:.1%} of stocks above average\n")
+            
+        pct200 = metrics.get('MA200', 0)
+        status = "Neutral"
+        if pct200 > 0.80: status = "EXTREME GREED"
+        elif pct200 > 0.60: status = "Greed"
+        elif pct200 < 0.20: status = "EXTREME FEAR"
+        elif pct200 < 0.40: status = "Fear"
+        
+        self.breadth_text.insert(tk.END, f"\nSentiment (MA200): {status}\n")
+        
+        # 2. Plot Bar Chart
+        for widget in self.breadth_chart_frame.winfo_children(): widget.destroy()
+        
+        fig = Figure(figsize=(5, 4), dpi=100)
+        ax = fig.add_subplot(111)
+        
+        mas = list(metrics.keys())
+        # Convert to % for plotting
+        vals = [metrics[k]*100 for k in mas]
+        
+        colors = ['red' if '200' in m else 'skyblue' for m in mas]
+        bars = ax.bar(mas, vals, color=colors)
+        
+        ax.set_ylim(0, 100)
+        ax.set_ylabel("% Stocks Above MA")
+        ax.set_title("Ibovespa Market Breadth")
+        ax.axhline(50, color='gray', linestyle='--', alpha=0.5)
+        ax.axhline(80, color='red', linestyle=':', alpha=0.5, label='Overbought')
+        ax.axhline(20, color='green', linestyle=':', alpha=0.5, label='Oversold')
+        
+        # Add labels on bars
+        for bar in bars:
+            height = bar.get_height()
+            ax.text(bar.get_x() + bar.get_width()/2., height,
+                    f'{height:.1f}%',
+                    ha='center', va='bottom')
+        
+        fig.tight_layout()
+        
+        canvas = FigureCanvasTkAgg(fig, master=self.breadth_chart_frame)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill='both', expand=True)
 
 if __name__ == "__main__":
     app = FinancialDashboardArgs()
