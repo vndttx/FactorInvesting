@@ -9,7 +9,6 @@ def get_financial_data(ticker_obj):
         info = ticker_obj.info
         fast_info = ticker_obj.fast_info
         
-        # Get price
         try:
             current_price = fast_info['last_price']
         except:
@@ -28,7 +27,6 @@ def get_financial_data(ticker_obj):
             'peg_ratio': info.get('pegRatio'),
             'earnings_growth': info.get('earningsGrowth'),
             'sector': info.get('sector', 'Unknown'),
-            # For Bazin
             'dividends': ticker_obj.dividends
         }
         return data
@@ -43,14 +41,12 @@ def calculate_bazin(data):
         if divs.empty:
             return None, 0
 
-        # Calculate average dividends over last 3 years
         end_date = datetime.now()
         start_date = end_date - timedelta(days=365 * 3)
         
         if divs.index.tz is None:
              divs.index = divs.index.tz_localize('UTC')
         
-        # Ensure start_date is timezone-aware matching divs
         display_tz = divs.index.tz
         start_date = pd.Timestamp(start_date).tz_localize(display_tz)
 
@@ -62,11 +58,6 @@ def calculate_bazin(data):
         total_divs_3y = recent_divs.sum()
         avg_annual_div = total_divs_3y / 3.0
         
-        # Fair Price = Avg Dividend / 0.06 (usually 6% for Bazin, though code had 0.07 before, 6% is standard Bazin)
-        # User's previous code used 0.07 (7%), but standard Bazin is 6%. I will stick to 6% as it is the "Method", 
-        # but I'll note the yield.
-        # Let's stick to the previous code's implied logic if they want, but standard Bazin is 6%.
-        # I'll use 6% as the divisor for "Fair Price".
         fair_price = avg_annual_div / 0.06
         dividend_yield = (avg_annual_div / data['current_price']) * 100
         
@@ -98,13 +89,11 @@ def calculate_peg(data):
         if peg is not None:
             return peg, "Source: Yahoo"
             
-        # Fallback
         pe = data.get('pe_ratio')
-        growth = data.get('earnings_growth') # This is e.g. 0.15 for 15%
+        growth = data.get('earnings_growth')
         
         if pe and growth and growth != 0:
-            # PEG = PE / Growth_Rate_Percent
-            # If growth is 0.15, we use 15
+
             peg_calc = pe / (growth * 100)
             return peg_calc, "Est. from Growth"
             
