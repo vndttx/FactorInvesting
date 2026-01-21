@@ -23,6 +23,7 @@ try:
     import optimization_tool
     import market_breadth
     import rrg_tool
+    import fund_tool
     import pandas as pd
     from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 except ImportError as e:
@@ -976,13 +977,10 @@ class FinancialDashboardArgs(tk.Tk):
         for ticker, df in trails.items():
             if ticker in latest:
 
-
                 ax.plot(df['RS_Ratio'], df['RS_Momentum'],  alpha=0.6, linewidth=1)
-
 
                 ratio = latest[ticker]['RS_Ratio']
                 mom = latest[ticker]['RS_Momentum']
-
 
                 color = 'black'
                 if ratio > 100 and mom > 100: color = 'green'
@@ -990,24 +988,19 @@ class FinancialDashboardArgs(tk.Tk):
                 elif ratio < 100 and mom < 100: color = 'red'
                 elif ratio < 100 and mom > 100: color = 'blue'
 
-
                 ax.scatter(ratio, mom, color=color, s=50)
                 ax.text(ratio, mom, f" {ticker}", fontsize=8)
-
 
         ax.set_title("Relative Rotation Graph (vs Benchmark)")
         ax.set_xlabel("JdK RS-Ratio (Trend)")
         ax.set_ylabel("JdK RS-Momentum (Velocity)")
         ax.grid(True, linestyle=':', alpha=0.6)
 
-
         fig.tight_layout()
-
 
         canvas = FigureCanvasTkAgg(fig, master=self.rrg_chart_frame)
         canvas.draw()
         canvas.get_tk_widget().pack(fill='both', expand=True)
-
 
 if __name__ == "__main__":
     app = FinancialDashboardArgs()
