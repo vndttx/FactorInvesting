@@ -62,7 +62,7 @@ class FinancialDashboardArgs(tk.Tk):
         input_frame.pack(fill='x', padx=10, pady=10)
 
 
-        ttk.Label(input_frame, text="Ticker (e.g., PETR4):").pack(side='left', padx=5)
+        ttk.Label(input_frame, text="Ticker (e.g., BBAS3):").pack(side='left', padx=5)
         self.val_ticker_entry = ttk.Entry(input_frame, width=15)
         self.val_ticker_entry.pack(side='left', padx=5)
         self.val_ticker_entry.bind('<Return>', lambda e: self.run_valuation())
@@ -108,7 +108,7 @@ class FinancialDashboardArgs(tk.Tk):
         ttk.Label(input_frame, text="Tickers (comma sep):").grid(row=0, column=0, sticky='w', padx=5, pady=5)
         self.bt_tickers_entry = ttk.Entry(input_frame, width=50)
         self.bt_tickers_entry.grid(row=0, column=1, columnspan=3, sticky='w', padx=5, pady=5)
-        self.bt_tickers_entry.insert(0, "BBAS3, BBSE3, CMIG4, CXSE3, PETR4")
+        self.bt_tickers_entry.insert(0, "BBAS3, BBSE3, CMIG4, CXSE3")
 
 
         ttk.Label(input_frame, text="Initial Invest (BRL):").grid(row=1, column=0, sticky='w', padx=5, pady=5)
