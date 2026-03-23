@@ -36,16 +36,10 @@ class FinancialDashboardArgs(tk.Tk):
         super().__init__()
         self.title("Factor Investing Dashboard")
         self.geometry("900x720")
-
-
         style = ttk.Style()
         style.theme_use('clam')
-
-
         self.notebook = ttk.Notebook(self)
         self.notebook.pack(fill='both', expand=True, padx=10, pady=10)
-
-
         self.create_valuation_tab()
         self.create_backtest_tab()
         self.create_optimization_tab()
