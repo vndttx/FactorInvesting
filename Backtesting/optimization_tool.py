@@ -4,7 +4,7 @@ import numpy as np
 import io
 
 class PortfolioOptimizer:
-    def __init__(self, tickers, start_date, end_date=None, risk_free_rate=0.10):
+    def __init__(self, tickers, start_date, end_date=None, risk_free_rate=0.10, price_data=None):
         self.tickers = tickers
         self.start_date = start_date
         self.end_date = end_date if end_date else pd.Timestamp.now().strftime('%Y-%m-%d')
@@ -12,19 +12,16 @@ class PortfolioOptimizer:
         self.data = pd.DataFrame()
     
     def fetch_data(self):
-        # Similar data fetching logic as Backtester but simpler (just Close prices)
-        # Assuming US stocks don't have .SA, same logic
-        us_stocks = [t for t in self.tickers if not t.endswith('.SA') and not '.' in t] # Simple heuristic
-        # Actually in the backtester we checked if it didn't end with .SA. 
-        # But 'USDBRL=X' has . in it.
-        # Let's rely on standard yfinance, user usually provides proper tickers.
-        # But to be safe and consistent with backtester:
+        if self.price_data_input is not None:
+            data = self.price_data_input
+        else:
+            data = yf.download(self.tickers, start=self.start_date, end=self.end_date)['Close']
+        us_stocks = [t for t in self.tickers if not t.endswith('.SA') and not '.' in t] 
         us_stocks = [t for t in self.tickers if not t.endswith('.SA') and not 'BRL' in t and not '=' in t]
          
         print(f"Fetching data for {self.tickers}...")
         data = yf.download(self.tickers, start=self.start_date, end=self.end_date)['Close']
         
-        # Currency conv if needed
         if us_stocks:
              currency_data = yf.download("USDBRL=X", start=self.start_date, end=self.end_date)['Close']
              if isinstance(currency_data, pd.DataFrame): currency_data = currency_data.iloc[:, 0]
@@ -39,41 +36,35 @@ class PortfolioOptimizer:
                      
         self.data = data.ffill().bfill().dropna()
         
+        returns = self.data.pct_change().dropna()
+        mean_returns = returns.mean() * 252
+        cov_matrix = returns.cov() * 252
+    
     def optimize(self, num_portfolios=5000):
         if self.data.empty:
             self.fetch_data()
             
-        # Daily Returns
-        returns = self.data.pct_change()
-        mean_returns = returns.mean()
-        
-        # AnnualCov
-        cov_matrix = returns.cov() * 252
-        
-        # Annual Returns
-        annual_returns = mean_returns * 252
-        
-        results = np.zeros((3, num_portfolios))
-        weights_record = []
-        
+        # Geração de pesos vetorizada (sem loop)
         np.random.seed(42)
+        # Cria uma matriz (num_portfolios, n_tickers) de uma vez
+        weights_matrix = np.random.random((num_portfolios, len(self.tickers)))
+        weights_matrix = (weights_matrix.T / weights_matrix.sum(axis=1)).T
         
-        for i in range(num_portfolios):
-            weights = np.random.random(len(self.tickers))
-            weights /= np.sum(weights)
-            weights_record.append(weights)
-            
-            p_ret = np.sum(weights * annual_returns)
-            p_vol = np.sqrt(np.dot(weights.T, np.dot(cov_matrix, weights)))
-            
-            # Sharpe (assuming Risk Free Rate)
-            p_sharpe = (p_ret - self.risk_free_rate) / p_vol
-            
-            results[0,i] = p_ret
-            results[1,i] = p_vol
-            results[2,i] = p_sharpe
-            
-        # Helper for metrics
+        # Cálculos de Retorno e Volatilidade usando Álgebra Linear
+        # Retorno: Produto escalar entre matriz de pesos e vetor de retornos médios
+        p_returns = np.dot(weights_matrix, mean_returns)
+        
+        p_volatility = np.sqrt(np.einsum('ij,jk,ik->i', weights_matrix, cov_matrix, weights_matrix))
+        
+        # Sharpe Ratio vetorizado
+        p_sharpe = (p_returns - self.risk_free_rate) / p_volatility
+        
+        results = np.array([p_returns, p_volatility, p_sharpe])
+        
+        max_sharpe_idx = np.argmax(p_sharpe)
+        min_vol_idx = np.argmin(p_volatility)
+    
+    # ... (restante da lógica de métricas de curva de capital)
         def calc_metrics(w):
             port_ret = returns.dot(w)
             # Wealth Index
@@ -93,20 +84,13 @@ class PortfolioOptimizer:
         max_sharpe_idx = np.argmax(results[2])
         min_vol_idx = np.argmin(results[1])
         
-        # --- NEW: Optimal (Distance to Utopia) ---
-        # Normalize returns and volatility to 0-1 scale for fair distance calc
         rets = results[0]
         vols = results[1]
         
-        # Utopia point: Max Return, Min Volatility
-        # We want to minimize distance to (1, 0) in normalized space
-        # where 1 is best return, 0 is best volatility (lowest)
         
         norm_ret = (rets - rets.min()) / (rets.max() - rets.min())
         norm_vol = (vols - vols.min()) / (vols.max() - vols.min())
         
-        # Utopia: Max Return (norm=1), Min Vol (norm=0)
-        # Distance = sqrt( (nR - 1)^2 + (nV - 0)^2 )
         distances = np.sqrt( (norm_ret - 1)**2 + (norm_vol - 0)**2 )
         optimal_idx = np.argmin(distances)
         
