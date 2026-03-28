@@ -204,7 +204,6 @@ class FinancialDashboardArgs(tk.Tk):
         self.tab_bt = ttk.Frame(self.notebook)
         self.notebook.add(self.tab_bt, text="Portfolio Backtest")
 
-        # Configuration Section
         input_frame = ttk.LabelFrame(self.tab_bt, text="Configuration", padding=10)
         input_frame.pack(fill='x', padx=10, pady=10)
 
@@ -216,15 +215,10 @@ class FinancialDashboardArgs(tk.Tk):
 
         self.btn_run_bt = ttk.Button(input_frame, text="Run Backtest", command=self.run_backtest_thread)
         self.btn_run_bt.grid(row=3, column=3, sticky='e', padx=5, pady=5)
-
-        # Results Section
         self.bt_results_frame = ttk.LabelFrame(self.tab_bt, text="Performance Outcomes", padding=10)
         self.bt_results_frame.pack(fill='both', expand=True, padx=10, pady=10)
-
         self.bt_notebook = ttk.Notebook(self.bt_results_frame)
         self.bt_notebook.pack(fill='both', expand=True)
-
-        # Summary & Chart Tab
         self.bt_tab_summary = ttk.Frame(self.bt_notebook)
         self.bt_notebook.add(self.bt_tab_summary, text="Summary & Chart")
 
@@ -235,15 +229,10 @@ class FinancialDashboardArgs(tk.Tk):
 
         self.bt_chart_frame = ttk.Frame(self.bt_tab_summary)
         self.bt_chart_frame.pack(side='left', fill='both', expand=True, padx=5, pady=5)
-
-        # Dividends Tab
         self.bt_tab_divs = ttk.Frame(self.bt_notebook)
         self.bt_notebook.add(self.bt_tab_divs, text="Monthly Dividends")
-
         self.div_tree = ttk.Treeview(self.bt_tab_divs, show='headings')
         self.div_tree.pack(side='left', fill='both', expand=True, padx=5, pady=5)
-
-        # Scrollbars
         vsb = ttk.Scrollbar(self.bt_tab_divs, orient="vertical", command=self.div_tree.yview)
         vsb.pack(side='right', fill='y')
         hsb = ttk.Scrollbar(self.bt_tab_divs, orient="horizontal", command=self.div_tree.xview)
@@ -444,7 +433,6 @@ class FinancialDashboardArgs(tk.Tk):
             self.div_tree.insert("", "end", values=values)
 
     def update_plot(self, figure):
-    # Em vez de criar um novo FigureCanvasTkAgg toda vez:
         if hasattr(self, 'canvas_widget'):
             self.canvas_widget.get_tk_widget().destroy()
             self.is_processing = False
