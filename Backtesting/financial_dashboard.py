@@ -22,12 +22,10 @@ GLOBAL_DATA_CACHE = {}
 
 def get_cached_data(tickers, start_date, end_date):
     """Recupera dados do yfinance com cache para evitar downloads redundantes."""
-    # Criamos uma chave única baseada nos tickers e no período
     cache_key = (tuple(sorted(tickers)), start_date, end_date)
     
     if cache_key not in GLOBAL_DATA_CACHE:
         print(f"Baixando novos dados para: {tickers}")
-        # Baixamos com actions=True para garantir Dividendos e Splits
         data = yf.download(tickers, start=start_date, end=end_date, actions=True)
         GLOBAL_DATA_CACHE[cache_key] = data
     else:
@@ -215,32 +213,48 @@ class FinancialDashboardArgs(tk.Tk):
 
         self.btn_run_bt = ttk.Button(input_frame, text="Run Backtest", command=self.run_backtest_thread)
         self.btn_run_bt.grid(row=3, column=3, sticky='e', padx=5, pady=5)
+
+        self.progress_var = tk.DoubleVar()
+        self.progress_bar = ttk.Progressbar(self.tab_bt, variable=self.progress_var, maximum=100)
+        self.progress_bar.pack(fill='x', padx=10, pady=2)
+
         self.bt_results_frame = ttk.LabelFrame(self.tab_bt, text="Performance Outcomes", padding=10)
         self.bt_results_frame.pack(fill='both', expand=True, padx=10, pady=10)
+
         self.bt_notebook = ttk.Notebook(self.bt_results_frame)
         self.bt_notebook.pack(fill='both', expand=True)
+
         self.bt_tab_summary = ttk.Frame(self.bt_notebook)
         self.bt_notebook.add(self.bt_tab_summary, text="Summary & Chart")
 
-        self.bt_text_output = tk.Text(self.bt_tab_summary, height=10, width=50, 
-                                     bg="#1a1a1a", fg="#e0e0e0", insertbackground="white", 
-                                     borderwidth=0, relief="flat", font=("Consolas", 10), padx=8, pady=8)
-        self.bt_text_output.pack(side='left', fill='y', padx=5, pady=5)
+        self.bt_tree = ttk.Treeview(self.bt_tab_summary, columns=("Metric", "Value", "Notes"), show='headings', height=8)
+        self.bt_tree.heading("Metric", text="Metric")
+        self.bt_tree.heading("Value", text="Value")
+        self.bt_tree.heading("Notes", text="Notes")
+        self.bt_tree.column("Metric", width=120)
+        self.bt_tree.column("Value", width=100)
+        self.bt_tree.pack(side='left', fill='y', padx=5, pady=5)
 
         self.bt_chart_frame = ttk.Frame(self.bt_tab_summary)
-        self.bt_chart_frame.pack(side='left', fill='both', expand=True, padx=5, pady=5)
+        self.bt_chart_frame.pack(side='right', fill='both', expand=True, padx=5, pady=5)
+
+        self.fig_bt = Figure(figsize=(5, 4), dpi=100)
+        self.ax_bt = self.fig_bt.add_subplot(111)
+        from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+        self.canvas_bt = FigureCanvasTkAgg(self.fig_bt, master=self.bt_chart_frame)
+        self.canvas_bt.get_tk_widget().pack(fill='both', expand=True)
+
         self.bt_tab_divs = ttk.Frame(self.bt_notebook)
         self.bt_notebook.add(self.bt_tab_divs, text="Monthly Dividends")
+        
         self.div_tree = ttk.Treeview(self.bt_tab_divs, show='headings')
         self.div_tree.pack(side='left', fill='both', expand=True, padx=5, pady=5)
+        
         vsb = ttk.Scrollbar(self.bt_tab_divs, orient="vertical", command=self.div_tree.yview)
         vsb.pack(side='right', fill='y')
-        hsb = ttk.Scrollbar(self.bt_tab_divs, orient="horizontal", command=self.div_tree.xview)
-        hsb.pack(side='bottom', fill='x')
-        self.div_tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
+        self.div_tree.configure(yscrollcommand=vsb.set)
 
     def run_valuation(self):
-        # Captura a string e transforma em lista, limitando a 4
         raw_input = self.val_ticker_entry.get().replace(',', ' ')
         tickers = [self._format_ticker(t) for t in raw_input.split() if t.strip()][:4]
     
@@ -257,7 +271,17 @@ class FinancialDashboardArgs(tk.Tk):
 
     def _process_valuation_multi(self, tickers):
         try:
-            all_rows = []
+            # Primeiro, ordena os tickers alfabeticamente
+            tickers = sorted(tickers)
+            
+            # Dicionários para agrupar os resultados por método
+            groups = {
+                "Bazin": [],
+                "Graham": [],
+                "P/E (15x)": [],
+                "PEG Ratio": []
+            }
+
             for ticker in tickers:
                 stock = yf.Ticker(ticker)
                 data = valuation.get_financial_data(stock)
@@ -273,36 +297,49 @@ class FinancialDashboardArgs(tk.Tk):
                 if bazin_price:
                     upside = ((bazin_price - price) / price) * 100
                     status = "Cheap" if bazin_price > price else "Expensive"
-                    all_rows.append((f"{t_short} - Bazin", f"R$ {bazin_price:.2f}", f"{upside:+.2f}%", status, f"Avg Yield: {bazin_dy:.2f}%"))
+                    groups["Bazin"].append((f"{t_short}", f"R$ {bazin_price:.2f}", f"{upside:+.2f}%", status, f"Yield: {bazin_dy:.2f}%"))
+                else:
+                    groups["Bazin"].append((f"{t_short}", "N/A", "-", "-", "No Data"))
 
                 # 2. Graham Number
                 graham_price = valuation.calculate_graham(data)
                 if graham_price:
                     upside = ((graham_price - price) / price) * 100
                     status = "Cheap" if graham_price > price else "Expensive"
-                    all_rows.append((f"{t_short} - Graham", f"R$ {graham_price:.2f}", f"{upside:+.2f}%", status, "22.5 * EPS * BVPS"))
+                    groups["Graham"].append((f"{t_short}", f"R$ {graham_price:.2f}", f"{upside:+.2f}%", status, f"Price: R$ {price:.2f}"))
+                else:
+                    groups["Graham"].append((f"{t_short}", "N/A", "-", "-", "No Data"))
 
-                # 3. P/E Ratio (15x)
+                # 3. P/E Ratio
                 pe, eps = data.get('pe_ratio'), data.get('eps')
                 if pe and eps:
                     fair_pe = 15 * eps
                     upside_pe = ((fair_pe - price) / price) * 100
                     status_pe = "Cheap" if fair_pe > price else "Expensive"
-                    all_rows.append((f"{t_short} - P/E", f"R$ {fair_pe:.2f}", f"{upside_pe:+.2f}%", status_pe, f"Current P/E: {pe:.2f}"))
+                    groups["P/E (15x)"].append((f"{t_short}", f"R$ {fair_pe:.2f}", f"{upside_pe:+.2f}%", status_pe, f"P/E: {pe:.2f}"))
+                else:
+                    groups["P/E (15x)"].append((f"{t_short}", "N/A", "-", "-", "No Data"))
 
                 # 4. PEG Ratio
                 peg_v = valuation.calculate_peg(data)
                 if peg_v:
                     status = "Undervalued" if peg_v < 1 else "Overvalued"
-                    all_rows.append((f"{t_short} - PEG", f"{peg_v:.2f}", "-", status, "Ideal: < 1.0"))
+                    groups["PEG Ratio"].append((f"{t_short}", f"{peg_v:.2f}", "-", status, "Ideal < 1.0"))
+                else:
+                    groups["PEG Ratio"].append((f"{t_short}", "N/A", "-", "-", "No Data"))
 
-            # Atualiza a tabela com todos os ativos processados
-            self.after(0, lambda: self._update_val_table_multi(all_rows))
+            final_rows = []
+            for method, rows in groups.items():
+                if rows:
+                    final_rows.append((f"--- {method.upper()} ---", "", "", "", ""))
+                    final_rows.extend(rows)
+                    final_rows.append(("", "", "", "", ""))
+
+            self.after(0, lambda: self._update_val_table_multi(final_rows))
 
         except Exception as e:
             error_msg = str(e)
             self.after(0, lambda: messagebox.showerror("Error", error_msg))
-            self.after(0, lambda: self.val_status_label.config(text="Error."))
 
     def _update_val_table_multi(self, rows):
         self.val_tree.delete(*self.val_tree.get_children())
@@ -310,78 +347,126 @@ class FinancialDashboardArgs(tk.Tk):
             self.val_tree.insert("", "end", values=row)
         self.val_status_label.config(text="Comparação concluída.")
         
+    def _process_backtest(self, tickers, start_date, end_date, initial_investment, monthly_investment):
+        try:
+            self.is_processing = True
+            data = get_cached_data(tickers, start_date, end_date)
+            
+            if data is None or data.empty:
+                raise ValueError("Falha ao obter dados.")
+
+            bt = backtest_tool.PortfolioBacktester(
+                tickers=tickers,
+                start_date=start_date,
+                end_date=end_date,
+                initial_investment=initial_investment,
+                monthly_investment=monthly_investment,
+                injected_data=data
+            )
+            
+            results = bt.run()
+            
+            if results is None:
+                raise ValueError("O backtest não retornou resultados válidos.")
+
+            self.after(0, lambda: self._update_backtest_ui(results))
+
+        except Exception as e:
+            error_msg = str(e)
+            self.after(0, lambda: messagebox.showerror("Erro no Backtest", error_msg))
+        finally:
+            self.is_processing = False
+            self.after(0, lambda: self.btn_run_bt.config(state='normal'))
+    
+    def _update_backtest_ui(self, results):
+        self.btn_run_bt.config(state='normal')
+        self.is_processing = False
+
+        for i in self.bt_tree.get_children(): self.bt_tree.delete(i)
+        stats = results['stats']
+        for k, v in stats.items():
+            unit = "%" if k != "Sharpe Ratio" else ""
+            self.bt_tree.insert("", "end", values=(k, f"{v:.2f}{unit}", ""))
+
+        self.ax_bt.clear()
+        results['portfolio_pct'].plot(ax=self.ax_bt, label="Estratégia", color='#00ff00', linewidth=2)
+        results['bench_rf_pct'].plot(ax=self.ax_bt, label="Benchmark Selic (100%)", color='#ffcc00', linestyle='--')
+        if results['ibov_pct'] is not None:
+            results['ibov_pct'].plot(ax=self.ax_bt, label="Benchmark Ibov", color='#ffffff', alpha=0.5)
+        
+        self.ax_bt.set_title("Rentabilidade Real Acumulada (%)")
+        self.ax_bt.yaxis.set_major_formatter(mtick.PercentFormatter())
+        self.ax_bt.legend()
+        self.canvas_bt.draw()
+
+        for i in self.div_tree.get_children(): self.div_tree.delete(i)
+        div_matrix = results['div_matrix']
+        
+        months = ["Ano", "Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez", "Total"]
+        self.div_tree["columns"] = months
+        for col in months:
+            self.div_tree.heading(col, text=col)
+            self.div_tree.column(col, width=60, anchor='center')
+
+        for year, row in div_matrix.iterrows():
+            row_data = [year]
+            year_total = 0
+            for m in range(1, 13):
+                val = row.get(m, 0.0)
+                row_data.append(f"{val:.2f}" if val > 0 else "-")
+                year_total += val
+            row_data.append(f"{year_total:.2f}")
+            self.div_tree.insert("", "end", values=row_data)
+            
     def run_backtest_thread(self):
         if self.is_processing:
-            self.log("Aguarde o término do processo atual.", "WARNING")
-            return
-        tickers = self._format_tickers(self.bt_tickers_entry.get())
-        init_str, monthly_str = self.bt_initial_entry.get(), self.bt_monthly_entry.get()
-        start_date, rf_alloc_str = self.bt_start_entry.get(), self.bt_rf_alloc_entry.get()
-
-        if not (tickers and init_str and monthly_str and start_date and rf_alloc_str):
-            messagebox.showwarning("Missing Inputs", "Please fill all fields.")
+            messagebox.showwarning("Aviso", "Aguarde o término do processo atual.")
             return
 
+        tickers_raw = self.bt_tickers_entry.get().replace(',', ' ')
+        tickers = []
+        for t in tickers_raw.split():
+            t = t.strip().upper()
+            if t and not any(ext in t for ext in ['.SA', '.X', '^']):
+                tickers.append(f"{t}.SA")
+            elif t:
+                tickers.append(t)
+        
+        start_date = self.bt_start_entry.get()
+        end_date = datetime.now().strftime('%Y-%m-%d')
+        
         try:
-            initial, monthly = float(init_str), float(monthly_str)
-            rf_alloc = float(rf_alloc_str)
-            if not (0 <= rf_alloc <= 100):
-                 messagebox.showerror("Invalid Input", "Risk Free Allocation must be between 0 and 100.")
-                 return
-            rf_alloc_decimal = rf_alloc / 100.0
+            initial_investment = float(self.bt_initial_entry.get())
+            monthly_investment = float(self.bt_monthly_entry.get())
         except ValueError:
-            messagebox.showerror("Invalid Number", "Investments/Allocation must be numbers.")
+            messagebox.showerror("Erro", "Valores de investimento devem ser números.")
+            return
+
+        if not tickers or not start_date:
+            messagebox.showwarning("Aviso", "Preencha Tickers e Data de Início.")
+            return
+        try:
+            # 3. Captura dos valores financeiros
+            initial_investment = float(self.bt_initial_entry.get())
+            monthly_investment = float(self.bt_monthly_entry.get())
+            rf_alloc = float(self.bt_rf_alloc_entry.get()) / 100.0
+            
+            if not (0 <= rf_alloc <= 1):
+                raise ValueError("Alocação Risk Free deve ser entre 0 e 100.")
+
+        except ValueError as e:
+            messagebox.showerror("Erro de Entrada", f"Verifique os valores numéricos: {e}")
+            return
+
+        if not tickers or not start_date:
+            messagebox.showwarning("Campos Vazios", "Por favor, preencha Tickers e Data de Início.")
             return
 
         self.btn_run_bt.config(state='disabled')
-        self.is_processing = True # ATIVA FLAG
+        self.is_processing = True
         self.progress_var.set(10)
-        self.log(f"Iniciando Backtest para: {self.bt_tickers_entry.get()}")
-        self._run_in_thread(self._process_backtest, args=(tickers, initial, monthly, start_date, rf_alloc_decimal))
-
-    def _process_backtest(self, tickers, initial, monthly, start_date, rf_alloc_decimal):
-        try:
-            end_date = datetime.now().strftime('%Y-%m-%d')
-            
-            price_div_data = get_cached_data(tickers, start_date, end_date)     
-                   
-            bt = backtest_tool.PortfolioBacktester(
-            tickers, initial, monthly, start_date, 
-            risk_free_allocation=rf_alloc_decimal,
-            injected_data=price_div_data)
-            bt.run()
-            self.progress_var.set(50)
-            self.progress_var.set(100)
-            self.log("Backtest concluído com sucesso.")
-
-            m_reinvest = bt.calculate_metrics(bt.daily_returns_reinvest, bt.risk_free_daily_series.values)
-            m_no_reinvest = bt.calculate_metrics(bt.daily_returns_no_reinvest, bt.risk_free_daily_series.values)
-
-            m_reinvest["Beta (vs Ibov)"] = bt.calculate_beta(bt.daily_returns_reinvest)
-            m_no_reinvest["Beta (vs Ibov)"] = bt.calculate_beta(bt.daily_returns_no_reinvest)
-
-            output = ["\n=== PERFORMANCE METRICS ===\n", f"{'Metric':<25} | {'With Reinvest':<15} | {'No Reinvest':<15}", "-" * 65]
-            for k in m_reinvest.keys():
-                val_r, val_nr = m_reinvest[k], m_no_reinvest[k]
-                if k in ["Total Return", "CAGR", "Volatility", "Max Drawdown"]:
-                    fmt_r, fmt_nr = f"{val_r*100:.2f}%", f"{val_nr*100:.2f}%"
-                else:
-                    fmt_r, fmt_nr = f"{val_r:.2f}", f"{val_nr:.2f}"
-                output.append(f"{k:<25} | {fmt_r:<15} | {fmt_nr:<15}")
-
-            output.append("\n\n=== FINAL PORTFOLIO VALUES (BRL) ===")
-            final = bt.results.iloc[-1]
-            for k, v in final.items():
-                output.append(f"{k:<25}: R$ {v:,.2f}")
-
-            self.after(0, lambda: self._show_bt_results("\n".join(output), bt))
-        except Exception as e:
-            self.log(f"Erro: {str(e)}", "ERROR")
-            self._bt_error(str(e))
-        finally:
-            self.is_processing = False
-            self.btn_run_bt.config(state='normal')
-            self.after(2000, lambda: self.progress_var.set(0))
+        
+        self._run_in_thread(self._process_backtest, args=(tickers, start_date, end_date, initial_investment, monthly_investment))
 
     def _show_bt_results(self, report, bt_obj):
         self.bt_text_output.delete("1.0", tk.END)

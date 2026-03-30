@@ -9,17 +9,14 @@ import io
 import scipy.stats as stats
 
 class PortfolioBacktester:
-    def __init__(self, tickers, initial_investment, monthly_investment, start_date, end_date=None, benchmark_rate=0.10, risk_free_allocation=0.0, injected_data=None):
+    def __init__(self, tickers, initial_investment, monthly_investment, start_date, end_date, benchmark_rate=0.10, rf_allocation=0.0, injected_data=None):
         self.tickers = tickers
         self.initial_investment = initial_investment
         self.monthly_investment = monthly_investment
         self.start_date = start_date
         self.end_date = end_date if end_date else datetime.now().strftime('%Y-%m-%d')
         self.benchmark_rate = benchmark_rate
-        self.risk_free_allocation = risk_free_allocation
-        self.start_date = start_date
-        self.end_date = end_date if end_date else datetime.now().strftime('%Y-%m-%d')
-        self.benchmark_rate = benchmark_rate
+        self.rf_allocation = rf_allocation
         self.data = pd.DataFrame()
         self.dividends = pd.DataFrame()
         self.currency = pd.DataFrame()
@@ -29,74 +26,63 @@ class PortfolioBacktester:
         self.daily_returns_reinvest = []
         self.daily_returns_no_reinvest = []
         self.injected_data = injected_data #
-        self.price_data = None
         
     def fetch_data(self):
-        print("Fetching data...")
-        us_stocks = [t for t in self.tickers if not t.endswith('.SA')]
-        if self.injected_data is not None:
+        print(f"Fetching data for: {self.tickers}")
+        
+        if self.injected_data is not None and not self.injected_data.empty:
             data = self.injected_data
         else:
-            data = yf.download(self.tickers, start=self.start_date, end=self.end_date, actions=True)
-        
-        us_stocks = [t for t in self.tickers if not t.endswith('.SA')]
-        
-        data = yf.download(self.tickers, start=self.start_date, end=self.end_date, actions=True)
-        
-        print("Fetching Ibovespa data...")
-        try:
-             ibov_data = yf.download("^BVSP", start=self.start_date, end=self.end_date)['Close']
-             if isinstance(ibov_data, pd.DataFrame):
-                 ibov_data = ibov_data.iloc[:, 0]
-             self.ibov_series = ibov_data.ffill().bfill()
-        except Exception as e:
-             print(f"Could not fetch Ibovespa: {e}")
-             self.ibov_series = None
+            data = yf.download(self.tickers, start=self.start_date, end=self.end_date, actions=True, group_by='column')
 
+        if data is None or data.empty:
+            raise ValueError(f"Falha Crítica: Tickers não encontrados ou sem dados no período. Verifique se esqueceu o '.SA'")
+            
+        if data.index.tz is not None:
+            data.index = data.index.tz_localize(None)
 
         if len(self.tickers) > 1:
             self.price_data = data['Close'].ffill().bfill()
             self.div_data = data['Dividends'].fillna(0)
         else:
-            self.price_data = pd.DataFrame(data['Close']).rename(columns={'Close': self.tickers[0]}).ffill().bfill()
-            self.div_data = pd.DataFrame(data['Dividends']).rename(columns={'Dividends': self.tickers[0]})
-            
+            ticker = self.tickers[0]
+            self.price_data = pd.DataFrame(data['Close']).rename(columns={'Close': ticker}).ffill().bfill()
+            self.div_data = pd.DataFrame(data['Dividends']).rename(columns={'Dividends': ticker}).fillna(0)
+
+        us_stocks = [t for t in self.tickers if not t.endswith('.SA')]
         if us_stocks:
             print("Fetching currency data for US stocks...")
-            currency_data = yf.download("USDBRL=X", start=self.start_date, end=self.end_date)['Close']
+            currency_df = yf.download("USDBRL=X", start=self.start_date, end=self.end_date)['Close']
             
-            if isinstance(currency_data, pd.DataFrame):
-                currency_data = currency_data.iloc[:, 0]
+            if isinstance(currency_df, pd.DataFrame):
+                currency_df = currency_df.iloc[:, 0]
+            if currency_df.index.tz is not None:
+                currency_df.index = currency_df.index.tz_localize(None)
                 
-            self.currency_rate = currency_data.ffill().bfill()
-            
-            self.currency_rate = self.currency_rate.reindex(self.price_data.index).ffill().bfill()
- 
-            # Convert US stocks to BRL
+            self.currency_rate = currency_df.reindex(self.price_data.index).ffill().bfill()
+
             for ticker in us_stocks:
                 if ticker in self.price_data.columns:
-                    # Ensure we are multiplying Series by Series
                     self.price_data[ticker] = self.price_data[ticker] * self.currency_rate
-                    # Fix: Dividends also need conversion
                     if ticker in self.div_data.columns:
                         self.div_data[ticker] = self.div_data[ticker] * self.currency_rate
-        
-        # Drop rows with all NaNs (holidays etc)
+
+        # 5. Benchmark Ibovespa
+        print("Fetching Ibovespa data...")
+        try:
+            ibov_df = yf.download("^BVSP", start=self.start_date, end=self.end_date)['Close']
+            if isinstance(ibov_df, pd.DataFrame):
+                ibov_df = ibov_df.iloc[:, 0]
+            if ibov_df.index.tz is not None:
+                ibov_df.index = ibov_df.index.tz_localize(None)
+            self.ibov_series = ibov_df.reindex(self.price_data.index).ffill().bfill()
+        except Exception as e:
+            print(f"Could not fetch Ibovespa: {e}")
+            self.ibov_series = None
+
+        # 6. Alinhamento final e Risk Free
         self.price_data = self.price_data.dropna(how='all')
-        # Ensure Naive TZ
-        if self.price_data.index.tz is not None:
-             self.price_data.index = self.price_data.index.tz_localize(None)
-             
         self.div_data = self.div_data.loc[self.price_data.index].fillna(0)
-        
-        # Align IBOV
-        if self.ibov_series is not None:
-            # Ensure Naive
-             if self.ibov_series.index.tz is not None:
-                  self.ibov_series.index = self.ibov_series.index.tz_localize(None)
-             self.ibov_series = self.ibov_series.reindex(self.price_data.index).ffill()
-        
-        # Fetch Risk Free
         self.fetch_risk_free_data()
 
     def fetch_risk_free_data(self):
@@ -149,50 +135,88 @@ class PortfolioBacktester:
         return self.initial_investment * rf_factor
             
     def run(self):
-        if self.price_data is None:
+        try:
             self.fetch_data()
+            prices = self.price_data
+            asset_returns = prices.pct_change().fillna(0)
+            n_assets = len(self.tickers)
+            weights = np.array([1.0 / n_assets] * n_assets)
+            portfolio_daily_ret = (asset_returns * weights).sum(axis=1)
+            
+            monthly_mask = prices.index.to_period('M') != prices.index.to_period('M').shift(1)
+            
+            contributions = pd.Series(0.0, index=prices.index)
+            contributions.iloc[0] = self.initial_investment
+            contributions[monthly_mask & (contributions.index != contributions.index[0])] = self.monthly_investment
+            
+            total_invested_series = contributions.cumsum()
+            
+            # Cálculo do Valor da Carteira
+            portfolio_values = np.zeros(len(prices))
+            current_val = 0
+            for i in range(len(prices)):
+                current_val = current_val * (1 + portfolio_daily_ret.iloc[i]) + contributions.iloc[i]
+                portfolio_values[i] = current_val
+            portfolio_series = pd.Series(portfolio_values, index=prices.index)
 
-        print("Running vectorized backtest...")
-        
-        prices = self.price_data
-        asset_returns = prices.pct_change().fillna(0)
-        
-        n_assets = len(self.tickers)
-        weights = np.array([1.0 / n_assets] * n_assets)
-        
-        portfolio_daily_ret = (asset_returns * weights).sum(axis=1)
-        
-        contributions = pd.Series(0.0, index=prices.index)
-        contributions.iloc[0] = self.initial_investment * (1 - self.risk_free_allocation)
-        
-        monthly_mask = contributions.index.to_period('M') != contributions.index.to_period('M').shift(1)
-        contributions[monthly_mask & (contributions.index != contributions.index[0])] = \
-            self.monthly_investment * (1 - self.risk_free_allocation)
-        
-        portfolio_values = np.zeros(len(prices))
-        current_val = 0
-        
-        for i in range(len(prices)):
-            current_val = current_val * (1 + portfolio_daily_ret.iloc[i]) + contributions.iloc[i]
-            portfolio_values[i] = current_val
+            # Cálculo 100% Risk-Free (Benchmark)
+            rf_daily_rates = self.risk_free_daily_series.reindex(prices.index).fillna(0)
+            rf_values = np.zeros(len(prices))
+            curr_rf = 0
+            for i in range(len(prices)):
+                curr_rf = curr_rf * (1 + rf_daily_rates.iloc[i]) + contributions.iloc[i]
+                rf_values[i] = curr_rf
+            bench_rf_series = pd.Series(rf_values, index=prices.index)
 
-        rf_daily_rates = self.risk_free_daily_series.fillna(0)
-        rf_contributions = pd.Series(0.0, index=prices.index)
-        rf_contributions.iloc[0] = self.initial_investment * self.risk_free_allocation
-        rf_contributions[monthly_mask & (rf_contributions.index != rf_contributions.index[0])] = \
-            self.monthly_investment * self.risk_free_allocation
-        
-        rf_values = np.zeros(len(prices))
-        curr_rf = 0
-        for i in range(len(prices)):
-            curr_rf = curr_rf * (1 + rf_daily_rates.iloc[i]) + rf_contributions.iloc[i]
-            rf_values[i] = curr_rf
+            # Cálculo Ibov Normalizado (Benchmark)
+            ibov_series = None
+            if hasattr(self, 'ibov_series') and self.ibov_series is not None:
+                ibov_ret = self.ibov_series.pct_change().fillna(0)
+                ibov_values = np.zeros(len(prices))
+                curr_ibov = 0
+                for i in range(len(prices)):
+                    curr_ibov = curr_ibov * (1 + ibov_ret.iloc[i]) + contributions.iloc[i]
+                    ibov_values[i] = curr_ibov
+                ibov_series = pd.Series(ibov_values, index=prices.index)
 
-        self.results = pd.DataFrame({
-            'With Reinvestment': portfolio_values + rf_values,
-            'Invested Capital': (contributions + rf_contributions).cumsum(),
-            'Risk Free': self.calculate_benchmark_rf()
-        }, index=prices.index)
+            # Conversão para Retorno Percentual (Base 0%) para o Eixo Y
+            portfolio_pct = (portfolio_series / total_invested_series - 1) * 100
+            bench_rf_pct = (bench_rf_series / total_invested_series - 1) * 100
+            ibov_pct = (ibov_series / total_invested_series - 1) * 100 if ibov_series is not None else None
+
+            # Matriz de Dividendos (Ano x Mês)
+            div_total_daily = self.div_data.sum(axis=1)
+            df_divs = div_total_daily.to_frame(name='divs')
+            df_divs['year'] = df_divs.index.year
+            df_divs['month'] = df_divs.index.month
+            div_matrix = df_divs.groupby(['year', 'month'])['divs'].sum().unstack(fill_value=0)
+
+            # Stats
+            total_val = portfolio_series.iloc[-1]
+            total_cap = total_invested_series.iloc[-1]
+            total_return = ((total_val / total_cap) - 1) * 100
+            days = (prices.index[-1] - prices.index[0]).days
+            cagr = (((total_val / total_cap) ** (365.0 / days)) - 1) * 100 if days > 0 else 0
+            vol = portfolio_daily_ret.std() * np.sqrt(252) * 100
+            sharpe = (cagr / vol) if vol > 0 else 0
+            max_dd = ((portfolio_series / portfolio_series.cummax()) - 1).min() * 100
+
+            return {
+                'portfolio_pct': portfolio_pct,
+                'bench_rf_pct': bench_rf_pct,
+                'ibov_pct': ibov_pct,
+                'div_matrix': div_matrix,
+                'stats': {
+                    'Total Return': total_return,
+                    'CAGR': cagr,
+                    'Sharpe Ratio': sharpe,
+                    'Max Drawdown': max_dd,
+                    'Volatility': vol
+                }
+            }
+        except Exception as e:
+            print(f"Erro: {e}")
+            return None
         
     def display_monthly_income(self):
         if not self.daily_dividends:
@@ -340,6 +364,7 @@ if __name__ == "__main__":
     initial = 800
     monthly = 600
     start = '2015-01-01'
+    end = datetime.now().strftime('%Y-%m-%d')
     
     bt = PortfolioBacktester(tickers, initial, monthly, start)
     bt.run()
