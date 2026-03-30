@@ -558,28 +558,81 @@ class FinancialDashboardArgs(tk.Tk):
         self.opt_tickers_entry.insert(0, self.bt_tickers_entry.get())
 
     def run_optimization_thread(self):
-        tickers = self._format_tickers(self.opt_tickers_entry.get())
+        if self.is_processing:
+            messagebox.showwarning("Aviso", "Aguarde o término do processo atual.")
+            return
+
+        tickers_raw = self.opt_tickers_entry.get().replace(',', ' ')
+        tickers = []
+        for t in tickers_raw.split():
+            t = t.strip().upper()
+            if t and not any(ext in t for ext in ['.SA', '.X', '^']):
+                tickers.append(f"{t}.SA")
+            elif t:
+                tickers.append(t)
+
         start_date = self.opt_start_entry.get()
-        if not (tickers and start_date):
-            messagebox.showwarning("Input Error", "Please fill all fields.")
+        end_date = datetime.now().strftime('%Y-%m-%d')
+
+        if not tickers or not start_date:
+            messagebox.showwarning("Aviso", "Preencha Tickers e Data de Início.")
             return
 
         self.btn_run_opt.config(state='disabled')
-        self.opt_tree.delete(*self.opt_tree.get_children())
-        self._clear_frame(self.opt_frontier_tab)
-        self._clear_frame(self.opt_perf_tab)
+        self.is_processing = True
+        
+        self._run_in_thread(self._process_optimization, args=(tickers, start_date, end_date))
 
-        ttk.Label(self.opt_frontier_tab, text="Optimizing... This may take a moment.").pack(pady=20)
-        self._run_in_thread(self._process_optimization, args=(tickers, start_date))
-
-    def _process_optimization(self, tickers, start_date):
+    def _process_optimization(self, tickers, start_date, end_date):
         try:
-            opt = optimization_tool.PortfolioOptimizer(tickers, start_date)
-            sim_results, max_sharpe, min_vol, optimal = opt.optimize(num_portfolios=5000)
-            self.after(0, lambda: self._show_optimization_results(sim_results, max_sharpe, min_vol, optimal))
+            self.is_processing = True
+            data = get_cached_data(tickers, start_date, end_date)
+            
+            if data is None or data.empty:
+                raise ValueError("Falha ao obter dados para otimização.")
+
+            opt = optimization_tool.PortfolioOptimizer(
+                tickers=tickers,
+                start_date=start_date,
+                end_date=end_date,
+                price_data=data
+            )
+            
+            results = opt.optimize()
+            self.after(0, lambda: self._update_optimization_ui(results))
+
         except Exception as e:
-            self.after(0, lambda: messagebox.showerror("Optimization Error", str(e)))
+            self.after(0, lambda: messagebox.showerror("Erro na Otimização", str(e)))
+        finally:
+            self.is_processing = False
             self.after(0, lambda: self.btn_run_opt.config(state='normal'))
+
+    def _update_optimization_ui(self, results):
+        self.btn_run_opt.config(state='normal')
+        self.is_processing = False
+        
+        p_results, max_sharpe, min_vol, optimal = results
+
+        for i in self.opt_tree.get_children():
+            self.opt_tree.delete(i)
+
+        self.opt_tree.insert("", "end", values=("Max Sharpe", f"{max_sharpe['Return']*100:.2f}%", f"{max_sharpe['Volatility']*100:.2f}%", f"{max_sharpe['Sharpe']:.2f}"))
+        self.opt_tree.insert("", "end", values=("Min Volatility", f"{min_vol['Return']*100:.2f}%", f"{min_vol['Volatility']*100:.2f}%", f"{min_vol['Sharpe']:.2f}"))
+        self.opt_tree.insert("", "end", values=("Optimal (Dist)", f"{optimal['Return']*100:.2f}%", f"{optimal['Volatility']*100:.2f}%", f"{optimal['Sharpe']:.2f}"))
+
+        self.ax_opt.clear()
+        self.ax_opt.scatter(p_results[1], p_results[0], c=p_results[2], cmap='viridis', marker='o', s=10, alpha=0.3)
+        self.ax_opt.scatter(max_sharpe['Volatility'], max_sharpe['Return'], color='red', marker='*', s=100, label='Max Sharpe')
+        self.ax_opt.scatter(min_vol['Volatility'], min_vol['Return'], color='blue', marker='*', s=100, label='Min Vol')
+        self.ax_opt.scatter(optimal['Volatility'], optimal['Return'], color='white', marker='*', s=100, label='Optimal')
+        
+        self.ax_opt.set_title("Fronteira Eficiente")
+        self.ax_opt.set_xlabel("Volatilidade Esperada")
+        self.ax_opt.set_ylabel("Retorno Esperado")
+        self.ax_opt.legend()
+        self.canvas_opt.draw()
+
+        self.log("Otimização concluída com sucesso.")
 
     def _show_optimization_results(self, sim_results, max_sharpe, min_vol, optimal):
         self.btn_run_opt.config(state='normal')
