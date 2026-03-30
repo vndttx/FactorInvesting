@@ -138,80 +138,96 @@ class PortfolioBacktester:
         try:
             self.fetch_data()
             prices = self.price_data
-            asset_returns = prices.pct_change().fillna(0)
             n_assets = len(self.tickers)
             weights = np.array([1.0 / n_assets] * n_assets)
-            portfolio_daily_ret = (asset_returns * weights).sum(axis=1)
             
-            monthly_mask = prices.index.to_period('M') != prices.index.to_period('M').shift(1)
+            months = prices.index.month
+            monthly_mask = np.zeros(len(prices), dtype=bool)
+            for i in range(1, len(prices)):
+                if months[i] != months[i-1]:
+                    monthly_mask[i] = True
             
-            contributions = pd.Series(0.0, index=prices.index)
-            contributions.iloc[0] = self.initial_investment
-            contributions[monthly_mask & (contributions.index != contributions.index[0])] = self.monthly_investment
-            
-            total_invested_series = contributions.cumsum()
-            
-            # Cálculo do Valor da Carteira
-            portfolio_values = np.zeros(len(prices))
-            current_val = 0
-            for i in range(len(prices)):
-                current_val = current_val * (1 + portfolio_daily_ret.iloc[i]) + contributions.iloc[i]
-                portfolio_values[i] = current_val
-            portfolio_series = pd.Series(portfolio_values, index=prices.index)
-
-            # Cálculo 100% Risk-Free (Benchmark)
-            rf_daily_rates = self.risk_free_daily_series.reindex(prices.index).fillna(0)
+            shares_owned = pd.DataFrame(0.0, index=prices.index, columns=self.tickers)
             rf_values = np.zeros(len(prices))
-            curr_rf = 0
-            for i in range(len(prices)):
-                curr_rf = curr_rf * (1 + rf_daily_rates.iloc[i]) + contributions.iloc[i]
-                rf_values[i] = curr_rf
-            bench_rf_series = pd.Series(rf_values, index=prices.index)
+            portfolio_values = np.zeros(len(prices))
+            
+            rf_daily = self.risk_free_daily_series.reindex(prices.index).fillna(0)
+            curr_rf_balance = 0
+            
+            alloc_rf = self.rf_allocation
+            if alloc_rf > 1:
+                alloc_rf = alloc_rf / 100.0
 
-            # Cálculo Ibov Normalizado (Benchmark)
-            ibov_series = None
+            for i in range(len(prices)):
+                is_start = (i == 0)
+                is_monthly = monthly_mask[i]
+                
+                if is_start or is_monthly:
+                    total_contribution = self.initial_investment if is_start else self.monthly_investment
+                    
+                    risk_contribution = total_contribution * (1 - alloc_rf)
+                    rf_contribution = total_contribution * alloc_rf
+                    
+                    curr_rf_balance += rf_contribution
+                    
+                    if risk_contribution > 0:
+                        for idx, ticker in enumerate(self.tickers):
+                            p_today = prices[ticker].iloc[i]
+                            if p_today > 0:
+                                added = (risk_contribution * weights[idx]) / p_today
+                                shares_owned.loc[prices.index[i:], ticker] += added
+
+                curr_rf_balance = curr_rf_balance * (1 + rf_daily.iloc[i])
+                rf_values[i] = curr_rf_balance
+                portfolio_values[i] = (shares_owned.iloc[i] * prices.iloc[i]).sum() + rf_values[i]
+
+            portfolio_series = pd.Series(portfolio_values, index=prices.index)
+            
+            total_invested_series = pd.Series(0.0, index=prices.index)
+            total_invested_series.iloc[0] = self.initial_investment
+            for i in range(1, len(prices)):
+                total_invested_series.iloc[i] = total_invested_series.iloc[i-1]
+                if monthly_mask[i]:
+                    total_invested_series.iloc[i] += self.monthly_investment
+
+            rf_bench_vals = np.zeros(len(prices))
+            curr_bench_rf = 0
+            for i in range(len(prices)):
+                contrib = self.initial_investment if i == 0 else (self.monthly_investment if monthly_mask[i] else 0)
+                curr_bench_rf = curr_bench_rf * (1 + rf_daily.iloc[i]) + contrib
+                rf_bench_vals[i] = curr_bench_rf
+            rf_bench_series = pd.Series(rf_bench_vals, index=prices.index)
+
+            ibov_bench_series = None
             if hasattr(self, 'ibov_series') and self.ibov_series is not None:
                 ibov_ret = self.ibov_series.pct_change().fillna(0)
-                ibov_values = np.zeros(len(prices))
-                curr_ibov = 0
+                ibov_vals = np.zeros(len(prices))
+                curr_ib = 0
                 for i in range(len(prices)):
-                    curr_ibov = curr_ibov * (1 + ibov_ret.iloc[i]) + contributions.iloc[i]
-                    ibov_values[i] = curr_ibov
-                ibov_series = pd.Series(ibov_values, index=prices.index)
+                    contrib = self.initial_investment if i == 0 else (self.monthly_investment if monthly_mask[i] else 0)
+                    curr_ib = curr_ib * (1 + ibov_ret.iloc[i]) + contrib
+                    ibov_vals[i] = curr_ib
+                ibov_bench_series = pd.Series(ibov_vals, index=prices.index)
 
-            # Conversão para Retorno Percentual (Base 0%) para o Eixo Y
-            portfolio_pct = (portfolio_series / total_invested_series - 1) * 100
-            bench_rf_pct = (bench_rf_series / total_invested_series - 1) * 100
-            ibov_pct = (ibov_series / total_invested_series - 1) * 100 if ibov_series is not None else None
-
-            # Matriz de Dividendos (Ano x Mês)
-            div_total_daily = self.div_data.sum(axis=1)
-            df_divs = div_total_daily.to_frame(name='divs')
-            df_divs['year'] = df_divs.index.year
-            df_divs['month'] = df_divs.index.month
+            real_dividends = (self.div_data * shares_owned).sum(axis=1)
+            df_divs = real_dividends.to_frame(name='divs')
+            df_divs['year'], df_divs['month'] = df_divs.index.year, df_divs.index.month
             div_matrix = df_divs.groupby(['year', 'month'])['divs'].sum().unstack(fill_value=0)
 
-            # Stats
-            total_val = portfolio_series.iloc[-1]
+            final_val = portfolio_series.iloc[-1]
             total_cap = total_invested_series.iloc[-1]
-            total_return = ((total_val / total_cap) - 1) * 100
-            days = (prices.index[-1] - prices.index[0]).days
-            cagr = (((total_val / total_cap) ** (365.0 / days)) - 1) * 100 if days > 0 else 0
-            vol = portfolio_daily_ret.std() * np.sqrt(252) * 100
-            sharpe = (cagr / vol) if vol > 0 else 0
-            max_dd = ((portfolio_series / portfolio_series.cummax()) - 1).min() * 100
-
+            
             return {
-                'portfolio_pct': portfolio_pct,
-                'bench_rf_pct': bench_rf_pct,
-                'ibov_pct': ibov_pct,
+                'portfolio_pct': (portfolio_series / total_invested_series - 1) * 100,
+                'rf_pct': (rf_bench_series / total_invested_series - 1) * 100,
+                'ibov_pct': (ibov_bench_series / total_invested_series - 1) * 100 if ibov_bench_series is not None else None,
                 'div_matrix': div_matrix,
                 'stats': {
-                    'Total Return': total_return,
-                    'CAGR': cagr,
-                    'Sharpe Ratio': sharpe,
-                    'Max Drawdown': max_dd,
-                    'Volatility': vol
+                    'Total Return': ((final_val / total_cap) - 1) * 100,
+                    'CAGR': (((final_val / total_cap) ** (365.0 / (prices.index[-1] - prices.index[0]).days)) - 1) * 100,
+                    'Sharpe Ratio': (((final_val / total_cap) - 1) / (portfolio_series.pct_change().std() * np.sqrt(252))) if portfolio_series.pct_change().std() > 0 else 0,
+                    'Max Drawdown': ((portfolio_series / portfolio_series.cummax()) - 1).min() * 100,
+                    'Volatility': portfolio_series.pct_change().std() * np.sqrt(252) * 100
                 }
             }
         except Exception as e:

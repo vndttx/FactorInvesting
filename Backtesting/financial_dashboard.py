@@ -347,7 +347,7 @@ class FinancialDashboardArgs(tk.Tk):
             self.val_tree.insert("", "end", values=row)
         self.val_status_label.config(text="Comparação concluída.")
         
-    def _process_backtest(self, tickers, start_date, end_date, initial_investment, monthly_investment):
+    def _process_backtest(self, tickers, start_date, end_date, initial_investment, monthly_investment, rf_allocation):
         try:
             self.is_processing = True
             data = get_cached_data(tickers, start_date, end_date)
@@ -361,6 +361,7 @@ class FinancialDashboardArgs(tk.Tk):
                 end_date=end_date,
                 initial_investment=initial_investment,
                 monthly_investment=monthly_investment,
+                rf_allocation=rf_allocation,
                 injected_data=data
             )
             
@@ -372,50 +373,45 @@ class FinancialDashboardArgs(tk.Tk):
             self.after(0, lambda: self._update_backtest_ui(results))
 
         except Exception as e:
-            error_msg = str(e)
-            self.after(0, lambda: messagebox.showerror("Erro no Backtest", error_msg))
+            self.after(0, lambda: messagebox.showerror("Erro no Backtest", str(e)))
         finally:
             self.is_processing = False
             self.after(0, lambda: self.btn_run_bt.config(state='normal'))
-    
     def _update_backtest_ui(self, results):
         self.btn_run_bt.config(state='normal')
         self.is_processing = False
 
         for i in self.bt_tree.get_children(): self.bt_tree.delete(i)
-        stats = results['stats']
-        for k, v in stats.items():
-            unit = "%" if k != "Sharpe Ratio" else ""
-            self.bt_tree.insert("", "end", values=(k, f"{v:.2f}{unit}", ""))
+        for k, v in results['stats'].items():
+            self.bt_tree.insert("", "end", values=(k, f"{v:.2f}{'%' if 'Ratio' not in k else ''}", ""))
 
         self.ax_bt.clear()
         results['portfolio_pct'].plot(ax=self.ax_bt, label="Estratégia", color='#00ff00', linewidth=2)
-        results['bench_rf_pct'].plot(ax=self.ax_bt, label="Benchmark Selic (100%)", color='#ffcc00', linestyle='--')
+        results['rf_pct'].plot(ax=self.ax_bt, label="Selic (100%)", color='#ffcc00', linestyle='--')
         if results['ibov_pct'] is not None:
-            results['ibov_pct'].plot(ax=self.ax_bt, label="Benchmark Ibov", color='#ffffff', alpha=0.5)
+            results['ibov_pct'].plot(ax=self.ax_bt, label="Ibovespa", color='#ffffff', alpha=0.5)
         
-        self.ax_bt.set_title("Rentabilidade Real Acumulada (%)")
+        self.ax_bt.set_title("Rentabilidade Real (%)")
         self.ax_bt.yaxis.set_major_formatter(mtick.PercentFormatter())
         self.ax_bt.legend()
         self.canvas_bt.draw()
 
         for i in self.div_tree.get_children(): self.div_tree.delete(i)
         div_matrix = results['div_matrix']
-        
-        months = ["Ano", "Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez", "Total"]
-        self.div_tree["columns"] = months
-        for col in months:
-            self.div_tree.heading(col, text=col)
-            self.div_tree.column(col, width=60, anchor='center')
+        cols = ["Ano", "Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez", "Total"]
+        self.div_tree["columns"] = cols
+        for c in cols:
+            self.div_tree.heading(c, text=c)
+            self.div_tree.column(c, width=65, anchor='center')
 
         for year, row in div_matrix.iterrows():
             row_data = [year]
-            year_total = 0
+            y_total = 0
             for m in range(1, 13):
                 val = row.get(m, 0.0)
-                row_data.append(f"{val:.2f}" if val > 0 else "-")
-                year_total += val
-            row_data.append(f"{year_total:.2f}")
+                row_data.append(f"R$ {val:.2f}" if val > 0 else "-")
+                y_total += val
+            row_data.append(f"R$ {y_total:.2f}")
             self.div_tree.insert("", "end", values=row_data)
             
     def run_backtest_thread(self):
@@ -434,39 +430,20 @@ class FinancialDashboardArgs(tk.Tk):
         
         start_date = self.bt_start_entry.get()
         end_date = datetime.now().strftime('%Y-%m-%d')
-        
+
         try:
             initial_investment = float(self.bt_initial_entry.get())
             monthly_investment = float(self.bt_monthly_entry.get())
+            rf_allocation = float(self.bt_rf_alloc_entry.get()) / 100.0
         except ValueError:
-            messagebox.showerror("Erro", "Valores de investimento devem ser números.")
-            return
-
-        if not tickers or not start_date:
-            messagebox.showwarning("Aviso", "Preencha Tickers e Data de Início.")
-            return
-        try:
-            # 3. Captura dos valores financeiros
-            initial_investment = float(self.bt_initial_entry.get())
-            monthly_investment = float(self.bt_monthly_entry.get())
-            rf_alloc = float(self.bt_rf_alloc_entry.get()) / 100.0
-            
-            if not (0 <= rf_alloc <= 1):
-                raise ValueError("Alocação Risk Free deve ser entre 0 e 100.")
-
-        except ValueError as e:
-            messagebox.showerror("Erro de Entrada", f"Verifique os valores numéricos: {e}")
-            return
-
-        if not tickers or not start_date:
-            messagebox.showwarning("Campos Vazios", "Por favor, preencha Tickers e Data de Início.")
+            messagebox.showerror("Erro", "Valores de investimento e alocação devem ser números.")
             return
 
         self.btn_run_bt.config(state='disabled')
         self.is_processing = True
         self.progress_var.set(10)
         
-        self._run_in_thread(self._process_backtest, args=(tickers, start_date, end_date, initial_investment, monthly_investment))
+        self._run_in_thread(self._process_backtest, args=(tickers, start_date, end_date, initial_investment, monthly_investment, rf_allocation))
 
     def _show_bt_results(self, report, bt_obj):
         self.bt_text_output.delete("1.0", tk.END)
