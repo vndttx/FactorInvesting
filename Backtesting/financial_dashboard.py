@@ -539,9 +539,20 @@ class FinancialDashboardArgs(tk.Tk):
         self.opt_chart_notebook = ttk.Notebook(self.opt_results_frame)
         self.opt_chart_notebook.pack(side='left', fill='both', expand=True, padx=5)
 
-        self.opt_frontier_tab, self.opt_perf_tab = ttk.Frame(self.opt_chart_notebook), ttk.Frame(self.opt_chart_notebook)
+        self.opt_frontier_tab = ttk.Frame(self.opt_chart_notebook)
+        self.opt_perf_tab = ttk.Frame(self.opt_chart_notebook)
         self.opt_chart_notebook.add(self.opt_frontier_tab, text="Efficient Frontier")
         self.opt_chart_notebook.add(self.opt_perf_tab, text="Historical Performance")
+
+        self.fig_opt = Figure(figsize=(6, 4), dpi=100)
+        self.ax_opt = self.fig_opt.add_subplot(111)
+        self.canvas_opt = FigureCanvasTkAgg(self.fig_opt, master=self.opt_frontier_tab)
+        self.canvas_opt.get_tk_widget().pack(fill='both', expand=True)
+
+        self.fig_opt_hist = Figure(figsize=(6, 4), dpi=100)
+        self.ax_opt_hist = self.fig_opt_hist.add_subplot(111)
+        self.canvas_opt_hist = FigureCanvasTkAgg(self.fig_opt_hist, master=self.opt_perf_tab)
+        self.canvas_opt_hist.get_tk_widget().pack(fill='both', expand=True)
 
         self.opt_weights_frame = ttk.Frame(self.opt_results_frame)
         self.opt_weights_frame.pack(side='right', fill='y', padx=5)
@@ -621,16 +632,40 @@ class FinancialDashboardArgs(tk.Tk):
         self.opt_tree.insert("", "end", values=("Optimal (Dist)", f"{optimal['Return']*100:.2f}%", f"{optimal['Volatility']*100:.2f}%", f"{optimal['Sharpe']:.2f}"))
 
         self.ax_opt.clear()
-        self.ax_opt.scatter(p_results[1], p_results[0], c=p_results[2], cmap='viridis', marker='o', s=10, alpha=0.3)
-        self.ax_opt.scatter(max_sharpe['Volatility'], max_sharpe['Return'], color='red', marker='*', s=100, label='Max Sharpe')
-        self.ax_opt.scatter(min_vol['Volatility'], min_vol['Return'], color='blue', marker='*', s=100, label='Min Vol')
-        self.ax_opt.scatter(optimal['Volatility'], optimal['Return'], color='white', marker='*', s=100, label='Optimal')
+        self.ax_opt.set_facecolor('#1a1a1a')
+        self.fig_opt.set_facecolor('#1a1a1a')
         
-        self.ax_opt.set_title("Fronteira Eficiente")
-        self.ax_opt.set_xlabel("Volatilidade Esperada")
-        self.ax_opt.set_ylabel("Retorno Esperado")
-        self.ax_opt.legend()
+        self.ax_opt.scatter(p_results[1], p_results[0], c=p_results[2], cmap='viridis', marker='o', s=10, alpha=0.4)
+        self.ax_opt.scatter(max_sharpe['Volatility'], max_sharpe['Return'], color='red', marker='*', s=150, label='Max Sharpe', edgecolors='white')
+        self.ax_opt.scatter(min_vol['Volatility'], min_vol['Return'], color='blue', marker='*', s=150, label='Min Vol', edgecolors='white')
+        self.ax_opt.scatter(optimal['Volatility'], optimal['Return'], color='white', marker='*', s=150, label='Optimal', edgecolors='black')
+        
+        self.ax_opt.set_title("Fronteira Eficiente", color='white')
+        self.ax_opt.set_xlabel("Volatilidade Esperada", color='white')
+        self.ax_opt.set_ylabel("Retorno Esperado", color='white')
+        self.ax_opt.tick_params(colors='white')
+        self.ax_opt.legend(facecolor='#1a1a1a', labelcolor='white')
+        
+        self.fig_opt.tight_layout()
         self.canvas_opt.draw()
+
+        if hasattr(self, 'ax_opt_hist'):
+            self.ax_opt_hist.clear()
+            self.ax_opt_hist.set_facecolor('#1a1a1a')
+            self.fig_opt_hist.set_facecolor('#1a1a1a')
+            
+            max_sharpe['EquityCurve'].plot(ax=self.ax_opt_hist, label="Max Sharpe", color='red', linewidth=1.5)
+            min_vol['EquityCurve'].plot(ax=self.ax_opt_hist, label="Min Volatility", color='blue', linewidth=1.5)
+            optimal['EquityCurve'].plot(ax=self.ax_opt_hist, label="Optimal", color='white', linewidth=2)
+            
+            self.ax_opt_hist.set_title("Performance Histórica (Simulação)", color='white')
+            self.ax_opt_hist.set_xlabel("Data", color='white')
+            self.ax_opt_hist.set_ylabel("Valor", color='white')
+            self.ax_opt_hist.tick_params(colors='white')
+            self.ax_opt_hist.legend(facecolor='#1a1a1a', labelcolor='white')
+            
+            self.fig_opt_hist.tight_layout()
+            self.canvas_opt_hist.draw()
 
         self.log("Otimização concluída com sucesso.")
 
