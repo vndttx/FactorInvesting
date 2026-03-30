@@ -169,8 +169,8 @@ class FinancialDashboardArgs(tk.Tk):
         input_frame = ttk.LabelFrame(self.tab_val, text="Input", padding=10)
         input_frame.pack(fill='x', padx=10, pady=10)
 
-        ttk.Label(input_frame, text="Ticker (e.g., BBAS3):").pack(side='left', padx=5)
-        self.val_ticker_entry = ttk.Entry(input_frame, width=15)
+        ttk.Label(input_frame, text="Tickers (espaço ou vírgula):").pack(side='left', padx=5)
+        self.val_ticker_entry = ttk.Entry(input_frame, width=30)
         self.val_ticker_entry.pack(side='left', padx=5)
         self.val_ticker_entry.bind('<Return>', lambda e: self.run_valuation())
 
@@ -240,71 +240,76 @@ class FinancialDashboardArgs(tk.Tk):
         self.div_tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
 
     def run_valuation(self):
-        ticker = self._format_ticker(self.val_ticker_entry.get())
-        if not ticker:
-            messagebox.showwarning("Input Error", "Please enter a ticker symbol.")
+        # Captura a string e transforma em lista, limitando a 4
+        raw_input = self.val_ticker_entry.get().replace(',', ' ')
+        tickers = [self._format_ticker(t) for t in raw_input.split() if t.strip()][:4]
+    
+        if not tickers:
+            messagebox.showwarning("Erro de Entrada", "Por favor, insira pelo menos um ticker.")
             return
 
-        self.val_status_label.config(text=f"Fetching data for {ticker}...")
+        self.val_status_label.config(text=f"Buscando dados para: {', '.join(tickers)}...")
         self.val_tree.delete(*self.val_tree.get_children())
         self.update_idletasks()
-        self._run_in_thread(self._process_valuation, args=(ticker,))
+        
+        # Passa a lista de tickers para o processamento em thread
+        self._run_in_thread(self._process_valuation_multi, args=(tickers,))
 
-    def _process_valuation(self, ticker):
+    def _process_valuation_multi(self, tickers):
         try:
-            stock = yf.Ticker(ticker)
-            data = valuation.get_financial_data(stock)
+            all_rows = []
+            for ticker in tickers:
+                stock = yf.Ticker(ticker)
+                data = valuation.get_financial_data(stock)
 
-            if not data:
-                self.after(0, lambda: messagebox.showerror("Error", "Could not fetch data (check ticker or internet)."))
-                self.after(0, lambda: self.val_status_label.config(text="Error."))
-                return
+                if not data:
+                    continue
 
-            rows = []
-            price = data['current_price']
+                price = data['current_price']
+                t_short = ticker.replace('.SA', '')
 
-            bazin_price, bazin_dy = valuation.calculate_bazin(data)
-            if bazin_price:
-                upside = ((bazin_price - price) / price) * 100
-                status = "Cheap" if bazin_price > price else "Expensive"
-                rows.append(("Décio Bazin", f"R$ {bazin_price:.2f}", f"{upside:+.2f}%", status, f"Avg Yield: {bazin_dy:.2f}% (Target 6%)"))
-            else:
-                rows.append(("Décio Bazin", "N/A", "-", "-", "Insufficient Data"))
+                # 1. Décio Bazin
+                bazin_price, bazin_dy = valuation.calculate_bazin(data)
+                if bazin_price:
+                    upside = ((bazin_price - price) / price) * 100
+                    status = "Cheap" if bazin_price > price else "Expensive"
+                    all_rows.append((f"{t_short} - Bazin", f"R$ {bazin_price:.2f}", f"{upside:+.2f}%", status, f"Avg Yield: {bazin_dy:.2f}%"))
 
-            graham_price = valuation.calculate_graham(data)
-            if graham_price:
-                upside = ((graham_price - price) / price) * 100
-                status = "Cheap" if graham_price > price else "Expensive"
-                rows.append(("Graham Number", f"R$ {graham_price:.2f}", f"{upside:+.2f}%", status, "Sqrt(22.5 * EPS * BVPS)"))
-            else:
-                rows.append(("Graham Number", "N/A", "-", "-", "Neg Earnings/Book"))
+                # 2. Graham Number
+                graham_price = valuation.calculate_graham(data)
+                if graham_price:
+                    upside = ((graham_price - price) / price) * 100
+                    status = "Cheap" if graham_price > price else "Expensive"
+                    all_rows.append((f"{t_short} - Graham", f"R$ {graham_price:.2f}", f"{upside:+.2f}%", status, "22.5 * EPS * BVPS"))
 
-            pe, eps = data.get('pe_ratio'), data.get('eps')
-            if pe and eps:
-                fair_pe = 15 * eps
-                upside_pe = ((fair_pe - price) / price) * 100
-                status_pe = "Cheap" if fair_pe > price else "Expensive"
-                rows.append(("P/E Ratio (15x)", f"R$ {fair_pe:.2f}", f"{upside_pe:+.2f}%", status_pe, f"Current P/E: {pe:.2f}"))
-            else:
-                rows.append(("P/E Ratio", "N/A", "-", "-", "-"))
+                # 3. P/E Ratio (15x)
+                pe, eps = data.get('pe_ratio'), data.get('eps')
+                if pe and eps:
+                    fair_pe = 15 * eps
+                    upside_pe = ((fair_pe - price) / price) * 100
+                    status_pe = "Cheap" if fair_pe > price else "Expensive"
+                    all_rows.append((f"{t_short} - P/E", f"R$ {fair_pe:.2f}", f"{upside_pe:+.2f}%", status_pe, f"Current P/E: {pe:.2f}"))
 
-            peg, peg_note = valuation.calculate_peg(data)
-            if peg:
-                status = "Undervalued" if peg < 1 else "Overvalued"
-                rows.append(("PEG Ratio", f"{peg:.2f}", "-", status, f"<1.0 is Good ({peg_note})"))
-            else:
-                rows.append(("PEG Ratio", "N/A", "-", "-", "-"))
+                # 4. PEG Ratio
+                peg_v = valuation.calculate_peg(data)
+                if peg_v:
+                    status = "Undervalued" if peg_v < 1 else "Overvalued"
+                    all_rows.append((f"{t_short} - PEG", f"{peg_v:.2f}", "-", status, "Ideal: < 1.0"))
 
-            self.after(0, lambda: self._update_val_table(rows, price))
+            # Atualiza a tabela com todos os ativos processados
+            self.after(0, lambda: self._update_val_table_multi(all_rows))
+
         except Exception as e:
-            error_msg = str(e)  # Captura a mensagem antes do bloco fechar
-            self.after(0, lambda msg=error_message: messagebox.showerror("Error", msg))
+            error_msg = str(e)
+            self.after(0, lambda: messagebox.showerror("Error", error_msg))
+            self.after(0, lambda: self.val_status_label.config(text="Error."))
 
-    def _update_val_table(self, rows, current_price):
+    def _update_val_table_multi(self, rows):
+        self.val_tree.delete(*self.val_tree.get_children())
         for row in rows:
             self.val_tree.insert("", "end", values=row)
-        self.val_status_label.config(text=f"Analysis complete. Current Price: R$ {current_price:.2f}")
-
+        self.val_status_label.config(text="Comparação concluída.")
+        
     def run_backtest_thread(self):
         if self.is_processing:
             self.log("Aguarde o término do processo atual.", "WARNING")
