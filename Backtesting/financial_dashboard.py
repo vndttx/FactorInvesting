@@ -375,22 +375,42 @@ class FinancialDashboardArgs(tk.Tk):
         self.btn_run_bt.config(state='normal')
         self.is_processing = False
 
+        if 'performance' not in results:
+            messagebox.showerror("Erro", "Dados de performance ausentes nos resultados.")
+            return
+
         for i in self.bt_tree.get_children(): 
             self.bt_tree.delete(i)
         
+        perf = results['performance']
         stats = results.get('stats', {})
+        
+        final_with = perf['with_reinvest'].iloc[-1]
+        final_no = perf['no_reinvest'].iloc[-1]
+        final_ibov = perf['ibov'].iloc[-1]
+        final_cdi = perf['cdi'].iloc[-1]
+        final_inv = perf['invested_capital'].iloc[-1]
+
+        retorno_total = ((final_with / final_inv) - 1) * 100 if final_inv > 0 else 0
+
         metrics = [
+            ("Retorno Total", f"{retorno_total:.2f}%", "No período inteiro"),
             ("CAGR", f"{stats.get('cagr', 0):.2f}%", "Retorno Anual Composto"),
             ("Volatilidade", f"{stats.get('volatility', 0):.2f}%", "Risco Anualizado"),
             ("Max Drawdown", f"{stats.get('max_drawdown', 0):.2f}%", "Maior Queda Histórica"),
-            ("Beta vs IBOV", f"{stats.get('beta', 0):.2f}", "Sensibilidade ao Mercado")
+            ("Beta vs IBOV", f"{stats.get('beta', 0):.2f}", "Sensibilidade ao Mercado"),
+            ("---", "---", "---"),
+            ("Final: Com Reinvest.", f"R$ {final_with:,.2f}", "Estratégia Principal"),
+            ("Final: Sem Reinvest.", f"R$ {final_no:,.2f}", "Dividendos no Caixa"),
+            ("Final: IBOVESPA", f"R$ {final_ibov:,.2f}", "Somente Índice"),
+            ("Final: CDI", f"R$ {final_cdi:,.2f}", "Renda Fixa Risk Free"),
+            ("Total Investido", f"R$ {final_inv:,.2f}", "Soma dos Aportes")
         ]
+        
         for m in metrics:
             self.bt_tree.insert("", "end", values=m)
 
         self.ax_bt.clear()
-        
-        perf = results['performance']
         
         self.ax_bt.plot(perf.index, perf['with_reinvest'], label="Com Reinvestimento", color='#00ff00', linewidth=2)
         self.ax_bt.plot(perf.index, perf['no_reinvest'], label="Sem Reinvestimento", color='#00bbff', linewidth=1.5)
@@ -404,7 +424,31 @@ class FinancialDashboardArgs(tk.Tk):
         self.ax_bt.grid(True, alpha=0.2)
         self.canvas_bt.draw()
 
-        self._populate_div_table_optimized(results['div_matrix'])
+        for i in self.div_tree.get_children(): 
+            self.div_tree.delete(i)
+            
+        div_matrix = results.get('div_matrix')
+        
+        if div_matrix is not None and not div_matrix.empty:
+            cols = ["Ano", "Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez", "Total"]
+            self.div_tree["columns"] = cols
+            
+            for c in cols:
+                self.div_tree.heading(c, text=c)
+                self.div_tree.column(c, width=65, anchor='center')
+
+            for year, row in div_matrix.iterrows():
+                row_data = [str(int(year))]
+                y_total = 0
+                for m in range(1, 13):
+                    val = row.get(m, 0.0)
+                    if pd.isna(val): val = 0.0
+                    
+                    row_data.append(f"R$ {val:,.2f}" if val > 0 else "-")
+                    y_total += val
+                    
+                row_data.append(f"R$ {y_total:,.2f}")
+                self.div_tree.insert("", "end", values=row_data)
             
     def run_backtest_thread(self):
         if self.is_processing:
