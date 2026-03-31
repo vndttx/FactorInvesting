@@ -655,56 +655,115 @@ class FinancialDashboardArgs(tk.Tk):
             self.after(0, lambda: self.btn_run_opt.config(state='normal'))
 
     def _update_optimization_ui(self, results):
+        from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+        
         self.btn_run_opt.config(state='normal')
         self.is_processing = False
-        
+
+        if not results or len(results) != 4:
+            messagebox.showerror("Erro", "Resultados da otimização não estão no formato esperado.")
+            return
+
         p_results, max_sharpe, min_vol, optimal = results
 
-        for i in self.opt_tree.get_children():
+        results_frame = None
+        for child in self.tab_opt.winfo_children():
+            if isinstance(child, ttk.LabelFrame) and "Configuration" not in child.cget("text"):
+                results_frame = child
+                break
+                
+        if not results_frame:
+            results_frame = self.tab_opt.winfo_children()[-1]
+
+        if not hasattr(self, '_opt_layout_built'):
+            for widget in results_frame.winfo_children():
+                widget.destroy()
+
+            self.opt_tree = ttk.Treeview(results_frame, show='headings')
+            self.opt_tree.pack(side='left', fill='y', padx=5, pady=5)
+
+            self.opt_notebook = ttk.Notebook(results_frame)
+            self.opt_notebook.pack(side='right', fill='both', expand=True, padx=5, pady=5)
+
+            self.tab_front = ttk.Frame(self.opt_notebook)
+            self.opt_notebook.add(self.tab_front, text="Fronteira Eficiente")
+            self.fig_front = Figure(figsize=(5, 4), dpi=100)
+            self.fig_front.patch.set_facecolor('#121212')
+            self.ax_front = self.fig_front.add_subplot(111)
+            self.canvas_front = FigureCanvasTkAgg(self.fig_front, master=self.tab_front)
+            self.canvas_front.get_tk_widget().pack(fill='both', expand=True)
+
+            self.tab_hist = ttk.Frame(self.opt_notebook)
+            self.opt_notebook.add(self.tab_hist, text="Crescimento Histórico")
+            self.fig_hist = Figure(figsize=(5, 4), dpi=100)
+            self.fig_hist.patch.set_facecolor('#121212')
+            self.ax_hist = self.fig_hist.add_subplot(111)
+            self.canvas_hist = FigureCanvasTkAgg(self.fig_hist, master=self.tab_hist)
+            self.canvas_hist.get_tk_widget().pack(fill='both', expand=True)
+
+            self._opt_layout_built = True
+
+        for i in self.opt_tree.get_children(): 
             self.opt_tree.delete(i)
 
-        self.opt_tree.insert("", "end", values=("Max Sharpe", f"{max_sharpe['Return']*100:.2f}%", f"{max_sharpe['Volatility']*100:.2f}%", f"{max_sharpe['Sharpe']:.2f}"))
-        self.opt_tree.insert("", "end", values=("Min Volatility", f"{min_vol['Return']*100:.2f}%", f"{min_vol['Volatility']*100:.2f}%", f"{min_vol['Sharpe']:.2f}"))
-        self.opt_tree.insert("", "end", values=("Optimal (Dist)", f"{optimal['Return']*100:.2f}%", f"{optimal['Volatility']*100:.2f}%", f"{optimal['Sharpe']:.2f}"))
+        self.opt_tree["columns"] = ("Ativo_Metrica", "Max_Sharpe", "Min_Vol", "Optimal")
+        self.opt_tree.heading("Ativo_Metrica", text="Ativo / Métrica")
+        self.opt_tree.heading("Max_Sharpe", text="Max Sharpe")
+        self.opt_tree.heading("Min_Vol", text="Min Vol")
+        self.opt_tree.heading("Optimal", text="Optimal")
+        self.opt_tree.column("Ativo_Metrica", width=120, anchor='w')
+        self.opt_tree.column("Max_Sharpe", width=90, anchor='center')
+        self.opt_tree.column("Min_Vol", width=90, anchor='center')
+        self.opt_tree.column("Optimal", width=90, anchor='center')
 
-        self.ax_opt.clear()
-        self.ax_opt.set_facecolor('#1a1a1a')
-        self.fig_opt.set_facecolor('#1a1a1a')
+        tickers = list(max_sharpe['Weights'].keys())
+        self.opt_tree.insert("", "end", values=("--- PESOS DOS ATIVOS ---", "---", "---", "---"))
+        for t in tickers:
+            w_ms = max_sharpe['Weights'].get(t, 0) * 100
+            w_mv = min_vol['Weights'].get(t, 0) * 100
+            w_op = optimal['Weights'].get(t, 0) * 100
+            self.opt_tree.insert("", "end", values=(t, f"{w_ms:.1f}%", f"{w_mv:.1f}%", f"{w_op:.1f}%"))
+
+        self.opt_tree.insert("", "end", values=("", "", "", ""))
+        self.opt_tree.insert("", "end", values=("--- PERFORMANCE ---", "---", "---", "---"))
+        self.opt_tree.insert("", "end", values=("Retorno Esperado", f"{max_sharpe['Return']*100:.2f}%", f"{min_vol['Return']*100:.2f}%", f"{optimal['Return']*100:.2f}%"))
+        self.opt_tree.insert("", "end", values=("Volatilidade", f"{max_sharpe['Volatility']*100:.2f}%", f"{min_vol['Volatility']*100:.2f}%", f"{optimal['Volatility']*100:.2f}%"))
+        self.opt_tree.insert("", "end", values=("Sharpe Ratio", f"{max_sharpe['Sharpe']:.2f}", f"{min_vol['Sharpe']:.2f}", f"{optimal['Sharpe']:.2f}"))
+        self.opt_tree.insert("", "end", values=("Max Drawdown", f"{max_sharpe.get('MaxDrawdown', 0)*100:.2f}%", f"{min_vol.get('MaxDrawdown', 0)*100:.2f}%", f"{optimal.get('MaxDrawdown', 0)*100:.2f}%"))
+
+        self.ax_front.clear()
+        self.ax_front.set_facecolor('#121212')
+        self.ax_front.scatter(p_results[1], p_results[0], c=p_results[2], cmap='viridis', marker='o', s=10, alpha=0.4)
+        self.ax_front.scatter(max_sharpe['Volatility'], max_sharpe['Return'], color='red', marker='*', s=150, label='Max Sharpe', edgecolors='white')
+        self.ax_front.scatter(min_vol['Volatility'], min_vol['Return'], color='blue', marker='*', s=150, label='Min Volatility', edgecolors='white')
+        self.ax_front.scatter(optimal['Volatility'], optimal['Return'], color='white', marker='*', s=150, label='Optimal', edgecolors='white')
+        self.ax_front.set_title("Fronteira Eficiente")
+        self.ax_front.set_xlabel("Risco (Volatilidade)")
+        self.ax_front.set_ylabel("Retorno Esperado")
+        self.ax_front.xaxis.set_major_formatter(mtick.PercentFormatter(1.0))
+        self.ax_front.yaxis.set_major_formatter(mtick.PercentFormatter(1.0))
+        self.ax_front.legend(fontsize='small')
+        self.canvas_front.draw()
+
+        self.ax_hist.clear()
+        self.ax_hist.set_facecolor('#121212')
+        curve_ms = max_sharpe.get('EquityCurve')
+        curve_mv = min_vol.get('EquityCurve')
+        curve_op = optimal.get('EquityCurve')
         
-        self.ax_opt.scatter(p_results[1], p_results[0], c=p_results[2], cmap='viridis', marker='o', s=10, alpha=0.4)
-        self.ax_opt.scatter(max_sharpe['Volatility'], max_sharpe['Return'], color='red', marker='*', s=150, label='Max Sharpe', edgecolors='white')
-        self.ax_opt.scatter(min_vol['Volatility'], min_vol['Return'], color='blue', marker='*', s=150, label='Min Vol', edgecolors='white')
-        self.ax_opt.scatter(optimal['Volatility'], optimal['Return'], color='white', marker='*', s=150, label='Optimal', edgecolors='black')
+        if curve_ms is not None and not curve_ms.empty:
+            self.ax_hist.plot(curve_ms.index, curve_ms.values, label="Max Sharpe", color='red', linewidth=1.5)
+            self.ax_hist.plot(curve_mv.index, curve_mv.values, label="Min Volatilidade", color='blue', linewidth=1.5)
+            self.ax_hist.plot(curve_op.index, curve_op.values, label="Optimal", color='white', linewidth=2.5)
+            self.ax_hist.set_title("Crescimento Histórico (Base 100)")
+            self.ax_hist.yaxis.set_major_formatter(mtick.FuncFormatter(lambda x, p: f'{x:,.0f}'))
+            self.ax_hist.legend(fontsize='small')
+            self.ax_hist.grid(True, alpha=0.2)
+        else:
+            self.ax_hist.set_title("Histórico Indisponível")
+            
+        self.canvas_hist.draw()
         
-        self.ax_opt.set_title("Fronteira Eficiente", color='white')
-        self.ax_opt.set_xlabel("Volatilidade Esperada", color='white')
-        self.ax_opt.set_ylabel("Retorno Esperado", color='white')
-        self.ax_opt.tick_params(colors='white')
-        self.ax_opt.legend(facecolor='#1a1a1a', labelcolor='white')
-        
-        self.fig_opt.tight_layout()
-        self.canvas_opt.draw()
-
-        if hasattr(self, 'ax_opt_hist'):
-            self.ax_opt_hist.clear()
-            self.ax_opt_hist.set_facecolor('#1a1a1a')
-            self.fig_opt_hist.set_facecolor('#1a1a1a')
-            
-            max_sharpe['EquityCurve'].plot(ax=self.ax_opt_hist, label="Max Sharpe", color='red', linewidth=1.5)
-            min_vol['EquityCurve'].plot(ax=self.ax_opt_hist, label="Min Volatility", color='blue', linewidth=1.5)
-            optimal['EquityCurve'].plot(ax=self.ax_opt_hist, label="Optimal", color='white', linewidth=2)
-            
-            self.ax_opt_hist.set_title("Performance Histórica (Simulação)", color='white')
-            self.ax_opt_hist.set_xlabel("Data", color='white')
-            self.ax_opt_hist.set_ylabel("Valor", color='white')
-            self.ax_opt_hist.tick_params(colors='white')
-            self.ax_opt_hist.legend(facecolor='#1a1a1a', labelcolor='white')
-            
-            self.fig_opt_hist.tight_layout()
-            self.canvas_opt_hist.draw()
-
-        self.log("Otimização concluída com sucesso.")
-
     def _show_optimization_results(self, sim_results, max_sharpe, min_vol, optimal):
         self.btn_run_opt.config(state='normal')
         self.opt_tree.delete(*self.opt_tree.get_children())
