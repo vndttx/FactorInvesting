@@ -205,7 +205,7 @@ class FinancialDashboardArgs(tk.Tk):
         input_frame = ttk.LabelFrame(self.tab_bt, text="Configuration", padding=10)
         input_frame.pack(fill='x', padx=10, pady=10)
 
-        self.bt_tickers_entry = self._add_labeled_entry(input_frame, "Tickers (comma sep):", 0, 0, 50, "BBAS3, BBSE3, CMIG4, CXSE3", 3)
+        self.bt_tickers_entry = self._add_labeled_entry(input_frame, "Tickers (comma sep):", 0, 0, 50, "BBAS3, BBSE3, CMIG4, CXSE3, TAEE4, TIMS3", 3)
         self.bt_initial_entry = self._add_labeled_entry(input_frame, "Initial Invest (BRL):", 1, 0, 15, "1000")
         self.bt_monthly_entry = self._add_labeled_entry(input_frame, "Monthly Invest (BRL):", 1, 2, 15, "600")
         self.bt_start_entry   = self._add_labeled_entry(input_frame, "Start Date (YYYY-MM-DD):", 2, 0, 15, "2015-01-01")
@@ -266,15 +266,12 @@ class FinancialDashboardArgs(tk.Tk):
         self.val_tree.delete(*self.val_tree.get_children())
         self.update_idletasks()
         
-        # Passa a lista de tickers para o processamento em thread
         self._run_in_thread(self._process_valuation_multi, args=(tickers,))
 
     def _process_valuation_multi(self, tickers):
         try:
-            # Primeiro, ordena os tickers alfabeticamente
             tickers = sorted(tickers)
             
-            # Dicionários para agrupar os resultados por método
             groups = {
                 "Bazin": [],
                 "Graham": [],
@@ -292,7 +289,6 @@ class FinancialDashboardArgs(tk.Tk):
                 price = data['current_price']
                 t_short = ticker.replace('.SA', '')
 
-                # 1. Décio Bazin
                 bazin_price, bazin_dy = valuation.calculate_bazin(data)
                 if bazin_price:
                     upside = ((bazin_price - price) / price) * 100
@@ -301,7 +297,6 @@ class FinancialDashboardArgs(tk.Tk):
                 else:
                     groups["Bazin"].append((f"{t_short}", "N/A", "-", "-", "No Data"))
 
-                # 2. Graham Number
                 graham_price = valuation.calculate_graham(data)
                 if graham_price:
                     upside = ((graham_price - price) / price) * 100
@@ -310,7 +305,6 @@ class FinancialDashboardArgs(tk.Tk):
                 else:
                     groups["Graham"].append((f"{t_short}", "N/A", "-", "-", "No Data"))
 
-                # 3. P/E Ratio
                 pe, eps = data.get('pe_ratio'), data.get('eps')
                 if pe and eps:
                     fair_pe = 15 * eps
@@ -320,7 +314,6 @@ class FinancialDashboardArgs(tk.Tk):
                 else:
                     groups["P/E (15x)"].append((f"{t_short}", "N/A", "-", "-", "No Data"))
 
-                # 4. PEG Ratio
                 peg_v = valuation.calculate_peg(data)
                 if peg_v:
                     status = "Undervalued" if peg_v < 1 else "Overvalued"
@@ -373,6 +366,7 @@ class FinancialDashboardArgs(tk.Tk):
             self.after(0, lambda: self._update_backtest_ui(results))
 
         except Exception as e:
+            mensagem_erro = str(e)
             self.after(0, lambda: messagebox.showerror("Erro no Backtest", str(e)))
         finally:
             self.is_processing = False
@@ -381,38 +375,36 @@ class FinancialDashboardArgs(tk.Tk):
         self.btn_run_bt.config(state='normal')
         self.is_processing = False
 
-        for i in self.bt_tree.get_children(): self.bt_tree.delete(i)
-        for k, v in results['stats'].items():
-            self.bt_tree.insert("", "end", values=(k, f"{v:.2f}{'%' if 'Ratio' not in k else ''}", ""))
+        for i in self.bt_tree.get_children(): 
+            self.bt_tree.delete(i)
+        
+        stats = results.get('stats', {})
+        metrics = [
+            ("CAGR", f"{stats.get('cagr', 0):.2f}%", "Retorno Anual Composto"),
+            ("Volatilidade", f"{stats.get('volatility', 0):.2f}%", "Risco Anualizado"),
+            ("Max Drawdown", f"{stats.get('max_drawdown', 0):.2f}%", "Maior Queda Histórica"),
+            ("Beta vs IBOV", f"{stats.get('beta', 0):.2f}", "Sensibilidade ao Mercado")
+        ]
+        for m in metrics:
+            self.bt_tree.insert("", "end", values=m)
 
         self.ax_bt.clear()
-        results['portfolio_pct'].plot(ax=self.ax_bt, label="Estratégia", color='#00ff00', linewidth=2)
-        results['rf_pct'].plot(ax=self.ax_bt, label="Selic (100%)", color='#ffcc00', linestyle='--')
-        if results['ibov_pct'] is not None:
-            results['ibov_pct'].plot(ax=self.ax_bt, label="Ibovespa", color='#ffffff', alpha=0.5)
         
-        self.ax_bt.set_title("Rentabilidade Real (%)")
-        self.ax_bt.yaxis.set_major_formatter(mtick.PercentFormatter())
-        self.ax_bt.legend()
+        perf = results['performance']
+        
+        self.ax_bt.plot(perf.index, perf['with_reinvest'], label="Com Reinvestimento", color='#00ff00', linewidth=2)
+        self.ax_bt.plot(perf.index, perf['no_reinvest'], label="Sem Reinvestimento", color='#00bbff', linewidth=1.5)
+        self.ax_bt.plot(perf.index, perf['ibov'], label="Somente IBOV", color='#ffffff', alpha=0.5)
+        self.ax_bt.plot(perf.index, perf['cdi'], label="Somente CDI", color='#ffcc00', linestyle='--')
+        self.ax_bt.plot(perf.index, perf['invested_capital'], label="Total Investido", color='#888888', linestyle=':')
+        
+        self.ax_bt.set_title("Evolução Patrimonial: Comparativo de Estratégias")
+        self.ax_bt.yaxis.set_major_formatter(mtick.FuncFormatter(lambda x, p: f'R${x:,.0f}'))
+        self.ax_bt.legend(fontsize='small', loc='upper left')
+        self.ax_bt.grid(True, alpha=0.2)
         self.canvas_bt.draw()
 
-        for i in self.div_tree.get_children(): self.div_tree.delete(i)
-        div_matrix = results['div_matrix']
-        cols = ["Ano", "Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez", "Total"]
-        self.div_tree["columns"] = cols
-        for c in cols:
-            self.div_tree.heading(c, text=c)
-            self.div_tree.column(c, width=65, anchor='center')
-
-        for year, row in div_matrix.iterrows():
-            row_data = [year]
-            y_total = 0
-            for m in range(1, 13):
-                val = row.get(m, 0.0)
-                row_data.append(f"R$ {val:.2f}" if val > 0 else "-")
-                y_total += val
-            row_data.append(f"R$ {y_total:.2f}")
-            self.div_tree.insert("", "end", values=row_data)
+        self._populate_div_table_optimized(results['div_matrix'])
             
     def run_backtest_thread(self):
         if self.is_processing:
