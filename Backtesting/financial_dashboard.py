@@ -108,26 +108,25 @@ class FinancialDashboardArgs(tk.Tk):
         style = ttk.Style()
         style.theme_use('clam')
         
-        bg, fg, accent, highlight, select = "#020D19", "#EFEFEF", "#0B1215", "#0B1215", "#011222"
+        bg, fg, accent, highlight, select = "#020D19", "#EFEFEF", "#0B1215", "#101720", "#011222"
 
-        style.configure(".", background=bg, foreground=fg, fieldforeground=fg, font=('Segoe UI', 10), borderwidth=0, highlightthickness=0)
+        style.configure(".", background=bg, foreground=fg, fieldforeground=fg, font=('Segoe UI', 10), borderwidth=15, highlightthickness=15)
         style.configure("TNotebook", background=bg, borderwidth=1)
-        style.configure("TNotebook.Tab", background=accent, foreground="#EFEFEF", padding=[22, 10], borderwidth=0)
+        style.configure("TNotebook.Tab", background=accent, foreground="#EFEFEF", padding=[22, 10], borderwidth=15)
         style.map("TNotebook.Tab", background=[("selected", select)], foreground=[("selected", fg)])
         
         style.configure("TFrame", background=bg, borderwidth=0)
         style.configure("TLabelframe", background=bg, foreground=select, borderwidth=0)
         style.configure("TLabelframe.Label", background=bg, foreground=select, font=('Segoe UI', 10, 'bold'), padding=8)
         style.configure("TLabel", background=bg, foreground=fg)
-        style.configure("Treeview", background="#1a1a1a", foreground=fg, fieldbackground="#1a1a1a", borderwidth=0, rowheight=34)
         
+        style.configure("Treeview", background="#101720", foreground=fg, fieldbackground="#101720", borderwidth=0, rowheight=25)
         style.map("Treeview", background=[("selected", select)], foreground=[("selected", fg)])
         style.configure("Treeview.Heading", background=highlight, foreground=fg, borderwidth=0, relief="flat", font=('Segoe UI', 9, 'bold'), padding=8)
         style.map("Treeview.Heading", background=[("active", "#0B1215")])
 
         style.configure("TButton", background=accent, foreground=fg, borderwidth=0, padding=10, relief="flat")
         style.map("TButton", background=[("active", highlight)])
-        
         style.configure("TEntry", fieldbackground="#020D19", foreground=fg, borderwidth=0, relief="flat")
         style.map("TCheckbutton", background=[("active", bg)])
 
