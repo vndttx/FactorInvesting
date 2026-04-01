@@ -35,16 +35,16 @@ def get_cached_data(tickers, start_date, end_date):
 
 plt.style.use('dark_background')
 matplotlib.rcParams.update({
-    "figure.facecolor": "#121212",
-    "axes.facecolor": "#121212",
+    "figure.facecolor": "#020D19",
+    "axes.facecolor": "#020D19",
     "axes.edgecolor": "#1a1a1a",
-    "grid.color": "#252525",
+    "grid.color": "#011222",
     "text.color": "#e0e0e0",
     "axes.labelcolor": "#e0e0e0",
     "axes.labelweight": "bold",
     "xtick.color": "#9e9e9e",
     "ytick.color": "#9e9e9e",
-    "patch.edgecolor": "#121212",
+    "patch.edgecolor": "#020D19",
     "figure.autolayout": True,
     "axes.spines.top": False,
     "axes.spines.right": False
@@ -84,7 +84,7 @@ class FinancialDashboardArgs(tk.Tk):
         self.progress_var = tk.DoubleVar()
         self.title("Factor Investing Dashboard")
         self.geometry("900x720")
-        self.configure(bg="#121212")
+        self.configure(bg="#020D19")
         self._setup_dark_theme()
         self.notebook = ttk.Notebook(self)
         self.notebook.pack(fill='both', expand=True, padx=5, pady=5)
@@ -93,7 +93,7 @@ class FinancialDashboardArgs(tk.Tk):
         self.create_optimization_tab()
         self.create_breadth_tab()
         self.create_rrg_tab()
-        status_frame = tk.Frame(self, height=150, bg="#121212")
+        status_frame = tk.Frame(self, height=150, bg="#020D19")
         status_frame.pack(side=tk.BOTTOM, fill=tk.X, padx=10, pady=5)
         self.progress_bar = ttk.Progressbar(status_frame, variable=self.progress_var, maximum=100)
         self.progress_bar.pack(fill=tk.X, pady=2)
@@ -108,27 +108,27 @@ class FinancialDashboardArgs(tk.Tk):
         style = ttk.Style()
         style.theme_use('clam')
         
-        bg, fg, accent, highlight, select = "#121212", "#e0e0e0", "#1e1e1e", "#252525", "#0078d7"
+        bg, fg, accent, highlight, select = "#020D19", "#EFEFEF", "#0B1215", "#0B1215", "#011222"
 
         style.configure(".", background=bg, foreground=fg, fieldforeground=fg, font=('Segoe UI', 10), borderwidth=0, highlightthickness=0)
-        
-        style.configure("TNotebook", background=bg, borderwidth=0)
-        style.configure("TNotebook.Tab", background=accent, foreground="#999999", padding=[22, 10], borderwidth=0)
+        style.configure("TNotebook", background=bg, borderwidth=1)
+        style.configure("TNotebook.Tab", background=accent, foreground="#EFEFEF", padding=[22, 10], borderwidth=0)
         style.map("TNotebook.Tab", background=[("selected", select)], foreground=[("selected", fg)])
+        
         style.configure("TFrame", background=bg, borderwidth=0)
         style.configure("TLabelframe", background=bg, foreground=select, borderwidth=0)
         style.configure("TLabelframe.Label", background=bg, foreground=select, font=('Segoe UI', 10, 'bold'), padding=8)
         style.configure("TLabel", background=bg, foreground=fg)
-        
         style.configure("Treeview", background="#1a1a1a", foreground=fg, fieldbackground="#1a1a1a", borderwidth=0, rowheight=34)
+        
         style.map("Treeview", background=[("selected", select)], foreground=[("selected", fg)])
         style.configure("Treeview.Heading", background=highlight, foreground=fg, borderwidth=0, relief="flat", font=('Segoe UI', 9, 'bold'), padding=8)
-        style.map("Treeview.Heading", background=[("active", "#3d3d3d")])
+        style.map("Treeview.Heading", background=[("active", "#0B1215")])
 
         style.configure("TButton", background=accent, foreground=fg, borderwidth=0, padding=10, relief="flat")
         style.map("TButton", background=[("active", highlight)])
         
-        style.configure("TEntry", fieldbackground="#1a1a1a", foreground=fg, borderwidth=0, relief="flat")
+        style.configure("TEntry", fieldbackground="#020D19", foreground=fg, borderwidth=0, relief="flat")
         style.map("TCheckbutton", background=[("active", bg)])
 
     @staticmethod
@@ -188,7 +188,7 @@ class FinancialDashboardArgs(tk.Tk):
         self.val_tree.column("Notes", width=250)
         self.val_tree.pack(fill='both', expand=True)
 
-        self.val_status_label = ttk.Label(results_frame, text="Ready.", font=('Arial', 9, 'italic'))
+        self.val_status_label = ttk.Label(results_frame, text="Ready.", font=('Segoe UI', 9, 'italic'))
         self.val_status_label.pack(pady=5, anchor='w')
 
     def _add_labeled_entry(self, parent, label_text, row, col, width=15, default_val="", columnspan=1):
