@@ -7,13 +7,16 @@ import streamlit as st
 def get_financial_data(ticker_obj):
     try:
         info = ticker_obj.info
-        fast_info = ticker_obj.fast_info
         
-        try:
-            current_price = fast_info['last_price']
-        except:
-            hist = ticker_obj.history(period="1d")
-            current_price = hist['Close'].iloc[-1] if not hist.empty else None
+        # Garante a captura do preço atual limpando o MultiIndex se necessário
+        hist = ticker_obj.history(period="1d")
+        if not hist.empty:
+            if isinstance(hist.columns, pd.MultiIndex):
+                current_price = hist['Close'].iloc[-1].iloc[0]
+            else:
+                current_price = hist['Close'].iloc[-1]
+        else:
+            current_price = None
         
         growth = info.get('earningsGrowth')
         if growth is None:
@@ -38,6 +41,8 @@ def get_financial_data(ticker_obj):
             'dividends': ticker_obj.dividends
         }
         return data
+    except Exception:
+        return None
     except Exception:
         return None
 
