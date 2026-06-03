@@ -96,7 +96,6 @@ class BreadthAnalyzer:
             details[f'Above{ma}'] = above_mask
             
         return results, details
-
 def render():
     st.header("📊 Market Breadth Indicator (Amplitude de Mercado)")
     st.write("Mede a saúde do mercado calculando a percentagem de ações acima das suas médias móveis.")
@@ -118,7 +117,7 @@ def render():
         with st.spinner("Descarregando dados e calculando médias móveis..."):
             try:
                 # Instancia a classe original
-                breadth_calc = MarketBreadth(tickers=tickers, mas=[20, 50, 200])
+                breadth_calc = BreadthAnalyzer(tickers=tickers, mas=[20, 50, 200])
                 
                 # Força a busca dos dados respeitando a janela de dias solicitada
                 end_date = datetime.now()

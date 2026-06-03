@@ -344,14 +344,14 @@ def render():
 
     col1, col2 = st.columns(2)
     with col1:
-        tickers_input = st.text_input("Tickers (separados por vírgula):", value="BBAS3.SA, ITUB4.SA, CMIG4.SA")
-        initial_inv = st.number_input("Investimento Inicial (R$):", min_value=0.0, value=10000.0, step=1000.0)
-        monthly_inv = st.number_input("Investimento Mensal (R$):", min_value=0.0, value=1000.0, step=100.0)
+        tickers_input = st.text_input("Tickers (separados por vírgula):", value="BBAS3.SA, ITUB4.SA, CMIG4.SA", key="bt_tickers")
+        initial_inv = st.number_input("Investimento Inicial (R$):", min_value=0.0, value=10000.0, step=1000.0, key="bt_initial_inv")
+        monthly_inv = st.number_input("Investimento Mensal (R$):", min_value=0.0, value=1000.0, step=100.0, key="bt_monthly_inv")
     
     with col2:
-        start_d = st.date_input("Data de Início:", value=pd.to_datetime("2018-01-01"))
-        end_d = st.date_input("Data de Fim:", value=pd.to_datetime(datetime.now().strftime('%Y-%m-%d')))
-        rf_alloc = st.slider("Alocação em Renda Fixa (%):", min_value=0.0, max_value=100.0, value=0.0, step=5.0) / 100.0
+        start_d = st.date_input("Data de Início:", value=datetime(2018, 1, 1), key="bt_start_date")
+        end_d = st.date_input("Data de Fim:", value=datetime.now(), key="bt_end_date")
+        rf_alloc = st.slider("Alocação em Renda Fixa (%):", min_value=0.0, max_value=100.0, value=0.0, step=5.0, key="bt_rf_alloc") / 100.0
 
     if st.button("Rodar Backtest do Portfólio"):
         tickers_list = [t.strip().upper() for t in tickers_input.split(",")]
