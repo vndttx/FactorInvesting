@@ -6,12 +6,8 @@ import streamlit as st
 
 def get_financial_data(ticker_obj):
     try:
-        info = ticker_obj.info
-        
-        hist = ticker_obj.history(period="1d")
-        if hist.empty:
-            hist = ticker_obj.history(period="7d")
-            
+        # Garante dados históricos estendidos para evitar problemas de fuso horário
+        hist = ticker_obj.history(period="7d")
         if not hist.empty:
             if isinstance(hist.columns, pd.MultiIndex):
                 current_price = hist['Close'].ffill().iloc[-1].iloc[0]
@@ -19,10 +15,18 @@ def get_financial_data(ticker_obj):
                 current_price = hist['Close'].ffill().iloc[-1]
         else:
             current_price = None
-            
+
         if current_price is None or pd.isna(current_price):
             return None
-        
+
+        # Fallback seguro para o dicionário info (evita quebra no Streamlit Cloud)
+        try:
+            info = ticker_obj.info
+            if not info or not isinstance(info, dict):
+                info = {}
+        except:
+            info = {}
+
         growth = info.get('earningsGrowth')
         if growth is None:
             try:
@@ -33,14 +37,14 @@ def get_financial_data(ticker_obj):
                         growth = (net_income.iloc[0] - net_income.iloc[1]) / abs(net_income.iloc[1])
             except:
                 growth = None
-        
+
         data = {
             'symbol': info.get('symbol', ticker_obj.ticker),
             'current_price': float(current_price),
-            'book_value': info.get('bookValue'),
-            'eps': info.get('trailingEps'),
-            'pe_ratio': info.get('trailingPE'),
-            'peg_ratio': info.get('pegRatio'),
+            'book_value': info.get('bookValue') if info.get('bookValue') else None,
+            'eps': info.get('trailingEps') if info.get('trailingEps') else None,
+            'pe_ratio': info.get('trailingPE') if info.get('trailingPE') else None,
+            'peg_ratio': info.get('pegRatio') if info.get('pegRatio') else None,
             'earnings_growth': growth,
             'sector': info.get('sector', 'Unknown'),
             'dividends': ticker_obj.dividends
@@ -91,53 +95,50 @@ def render():
         value="BBAS3 ABCB4 ITUB3 BBDC4"
     ).strip().upper()
     
-    if st.button("Executar Análise de Valuation"):
-        ticker_list = user_input.split()[:4]
-        if not ticker_list:
-            st.warning("Nenhum ticker foi fornecido.")
-            return
+    ticker_list = user_input.split()[:4]
+    if not ticker_list:
+        st.warning("Nenhum ticker foi fornecido.")
+        return
 
-        comparison_data = []
+    comparison_data = []
 
-        with st.spinner("Procurando dados no Yahoo Finance..."):
-            for t in ticker_list:
-                symbol = t if t.endswith(".SA") else f"{t}.SA"
-                stock = yf.Ticker(symbol)
-                data = get_financial_data(stock)
+    with st.spinner("Procurando dados no Yahoo Finance..."):
+        for t in ticker_list:
+            symbol = t if t.endswith(".SA") else f"{t}.SA"
+            stock = yf.Ticker(symbol)
+            data = get_financial_data(stock)
+            
+            if data and data['current_price']:
+                bazin_p, _ = calculate_bazin(data)
+                graham_p = calculate_graham(data)
                 
-                if data and data['current_price']:
-                    bazin_p, _ = calculate_bazin(data)
-                    graham_p = calculate_graham(data)
-                    
-                    # Cálculo do Implied Value (Média de Bazin e Graham se ambos existirem)
-                    valid_prices = [p for p in [bazin_p, graham_p] if p is not None and p > 0]
-                    implied_value = sum(valid_prices) / len(valid_prices) if valid_prices else None
-                    
-                    # Cálculo de Upside, Status e Notes
-                    if implied_value:
-                        upside = ((implied_value / data['current_price']) - 1) * 100
-                        status = "🟢 BUY" if upside > 15 else ("🔴 SELL" if upside < -5 else "🟡 HOLD")
-                        notes = f"Margem segura de {upside:.1f}% baseada nos modelos." if upside > 0 else "Preço atual acima do valor justo estimado."
-                    else:
-                        upside = None
-                        status = "⚪ N/A"
-                        notes = "Dados insuficientes para cálculo de valor justo."
-                    
-                    comparison_data.append({
-                        'Ticker': data['symbol'].replace('.SA', ''),
-                        'Current Price': f"R$ {data['current_price']:.2f}",
-                        'Bazin Price': f"R$ {bazin_p:.2f}" if bazin_p else "N/A",
-                        'Graham Price': f"R$ {graham_p:.2f}" if graham_p else "N/A",
-                        'Implied Value': f"R$ {implied_value:.2f}" if implied_value else "N/A",
-                        'Upside': f"{upside:.2f}%" if upside is not None else "N/A",
-                        'Status': status,
-                        'Notes': notes
-                    })
+                valid_prices = [p for p in [bazin_p, graham_p] if p is not None and p > 0]
+                implied_value = sum(valid_prices) / len(valid_prices) if valid_prices else None
+                
+                if implied_value:
+                    upside = ((implied_value / data['current_price']) - 1) * 100
+                    status = "🟢 BUY" if upside > 15 else ("🔴 SELL" if upside < -5 else "🟡 HOLD")
+                    notes = f"Margem segura de {upside:.1f}% baseada nos modelos." if upside > 0 else "Preço atual acima do valor justo estimado."
+                else:
+                    upside = None
+                    status = "⚪ N/A"
+                    notes = "Dados insuficientes para cálculo de valor justo."
+                
+                comparison_data.append({
+                    'Ticker': data['symbol'].replace('.SA', ''),
+                    'Current Price': f"R$ {data['current_price']:.2f}",
+                    'Bazin Price': f"R$ {bazin_p:.2f}" if bazin_p else "N/A",
+                    'Graham Price': f"R$ {graham_p:.2f}" if graham_p else "N/A",
+                    'Implied Value': f"R$ {implied_value:.2f}" if implied_value else "N/A",
+                    'Upside': f"{upside:.2f}%" if upside is not None else "N/A",
+                    'Status': status,
+                    'Notes': notes
+                })
 
-        if not comparison_data:
-            st.error("Nenhum dado válido encontrado para os tickers informados.")
-            return
+    if not comparison_data:
+        st.error("Nenhum dado válido encontrado para os tickers informados.")
+        return
 
-        df_result = pd.DataFrame(comparison_data)
-        st.subheader("Resultados Comparativos")
-        st.dataframe(df_result, use_container_width=True, hide_index=True)
+    df_result = pd.DataFrame(comparison_data)
+    st.subheader("Resultados Comparativos")
+    st.dataframe(df_result, use_container_width=True, hide_index=True)
