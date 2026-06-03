@@ -368,7 +368,7 @@ def render():
                 )
                 
                 backtester.fetch_data()
-                results = backtester.run_simulation()
+                results = backtester.run()
                 
                 if results is None or results.empty:
                     st.error("Nenhum dado gerado para o período selecionado.")
