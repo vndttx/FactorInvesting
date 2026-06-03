@@ -8,15 +8,20 @@ def get_financial_data(ticker_obj):
     try:
         info = ticker_obj.info
         
-        # Garante a captura do preço atual limpando o MultiIndex se necessário
         hist = ticker_obj.history(period="1d")
+        if hist.empty:
+            hist = ticker_obj.history(period="7d")
+            
         if not hist.empty:
             if isinstance(hist.columns, pd.MultiIndex):
-                current_price = hist['Close'].iloc[-1].iloc[0]
+                current_price = hist['Close'].ffill().iloc[-1].iloc[0]
             else:
-                current_price = hist['Close'].iloc[-1]
+                current_price = hist['Close'].ffill().iloc[-1]
         else:
             current_price = None
+            
+        if current_price is None or pd.isna(current_price):
+            return None
         
         growth = info.get('earningsGrowth')
         if growth is None:
@@ -31,7 +36,7 @@ def get_financial_data(ticker_obj):
         
         data = {
             'symbol': info.get('symbol', ticker_obj.ticker),
-            'current_price': current_price,
+            'current_price': float(current_price),
             'book_value': info.get('bookValue'),
             'eps': info.get('trailingEps'),
             'pe_ratio': info.get('trailingPE'),
@@ -41,8 +46,6 @@ def get_financial_data(ticker_obj):
             'dividends': ticker_obj.dividends
         }
         return data
-    except Exception:
-        return None
     except Exception:
         return None
 
