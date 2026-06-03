@@ -3,6 +3,8 @@ import pandas as pd
 import numpy as np
 import yfinance as yf
 import tkinter as tk
+import streamlit as st
+from backtest_tool import rodar_backtest
 from tkinter import ttk, messagebox
 import sys
 import os
@@ -17,6 +19,22 @@ import rrg_tool
 import fund_tool
 from matplotlib.figure import Figure
 import matplotlib.ticker as mtick
+
+st.title("📊 Dashboard Financeiro")
+st.subheader("Análise de Performance e Ativos")
+
+ticker = st.sidebar.text_input("Digite o Ticker do Ativo", value="PETR4")
+data_inicio = st.sidebar.date_input("Data Inicial")
+if st.button("Rodar Backtest"):
+    with st.spinner("Processando dados..."):
+        # Sua função antiga que calcula os resultados
+        df_resultados = rodar_backtest(ticker, data_inicio) 
+        
+        # Exibindo os dados de forma interativa na tela
+        st.write("### Resultados Históricos", df_resultados)
+        
+        # Exibindo gráficos (se usar Plotly ou Matplotlib)
+        st.plotly_chart(figura_plotly)
 
 GLOBAL_DATA_CACHE = {}
 

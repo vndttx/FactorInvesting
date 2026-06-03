@@ -1,21 +1,18 @@
-import streamlit as nn
+import streamlit as st
 import os
 
-nn.set_page_config(page_title="Dashboard Financeiro", layout="wide")
+st.set_page_config(
+    page_title="Plataforma de Backtesting",
+    page_icon="📈",
+    layout="wide"
+)
 
-import financial_dashboard
-import fund_dashboard
-import market_breadth
-import rrg_tool
-
-paginas = {
-    "Dashboard Financeiro": financial_dashboard,
-    "Dashboard de Fundos": fund_dashboard,
-    "Market Breadth": market_breadth,
-    "RRG Tool": rrg_tool
-}
-
-opcao = nn.sidebar.selectbox("Selecione a Ferramenta", list(paginas.keys()))
-
-nn.title(opcao)
-paginas[opcao].render()
+st.title("Welcome to the Backtesting & Analytics Platform")
+st.markdown("""
+Esta plataforma reúne ferramentas avançadas de análise quantitativa e finanças.
+Utilize o menu ao lado para navegar entre as ferramentas disponíveis:
+* **Financial Dashboard**: Análise detalhada de ativos.
+* **Fund Dashboard**: Comparativo e métricas de fundos.
+* **Market Breadth**: Indicadores de saúde do mercado.
+* **RRG Tool**: Gráficos de Rotação Relativa.
+""")
