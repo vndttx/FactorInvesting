@@ -2,6 +2,7 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import streamlit as st
 from datetime import datetime, timedelta
 import matplotlib.ticker as mtick
 import requests
@@ -68,7 +69,6 @@ class PortfolioBacktester:
                     if ticker in self.div_data.columns:
                         self.div_data[ticker] = self.div_data[ticker] * self.currency_rate
 
-        # Benchmark Ibovespa
         print("Fetching Ibovespa data...")
         try:
             ibov_df = yf.download("^BVSP", start=self.start_date, end=self.end_date)['Close']
@@ -81,7 +81,6 @@ class PortfolioBacktester:
             print(f"Could not fetch Ibovespa: {e}")
             self.ibov_series = None
 
-        # Alinhamento final e Risk Free
         self.price_data = self.price_data.dropna(how='all')
         self.div_data = self.div_data.loc[self.price_data.index].fillna(0)
         self.fetch_risk_free_data()
@@ -130,23 +129,20 @@ class PortfolioBacktester:
             if hasattr(self, 'ibov_series') and self.ibov_series is not None:
                 ibov_ret = self.ibov_series.pct_change().reindex(dates).fillna(0).values
 
-            # Detecção de virada de mês para os aportes
             months = dates.month
             monthly_mask = np.zeros(n_days, dtype=bool)
             for i in range(1, n_days):
                 if months[i] != months[i-1]:
                     monthly_mask[i] = True
 
-            # Arrays para armazenar as curvas de patrimônio (as 5 linhas)
             invested_capital = np.zeros(n_days)
             cdi_balance = np.zeros(n_days)
             ibov_balance = np.zeros(n_days)
-            port_val_nr = np.zeros(n_days)  # Portfolio sem reinvestimento
-            port_val_r = np.zeros(n_days)   # Portfolio com reinvestimento
+            port_val_nr = np.zeros(n_days)
+            port_val_r = np.zeros(n_days)
             
             daily_divs_received = np.zeros(n_days)
 
-            # Controladores de ativos e caixa
             shares_nr = np.zeros(n_assets)
             shares_r = np.zeros(n_assets)
             cash_nr = 0.0
@@ -155,9 +151,7 @@ class PortfolioBacktester:
             alloc_rf = self.rf_allocation / 100.0 if self.rf_allocation > 1 else self.rf_allocation
             alloc_eq = 1.0 - alloc_rf
 
-            # Simulação diária
             for i in range(n_days):
-                # 1. Rendimento do CDI nos caixas
                 cash_nr *= (1 + rf_daily[i])
                 cash_r *= (1 + rf_daily[i])
                 
@@ -166,7 +160,6 @@ class PortfolioBacktester:
                     ibov_balance[i] = ibov_balance[i-1] * (1 + ibov_ret[i])
                     invested_capital[i] = invested_capital[i-1]
 
-                # 2. Aportes Mensais
                 if i == 0 or monthly_mask[i]:
                     contrib = self.initial_investment if i == 0 else self.monthly_investment
                     invested_capital[i] += contrib
@@ -188,15 +181,13 @@ class PortfolioBacktester:
                         shares_nr += s_bought
                         shares_r += s_bought
 
-                # 3. Pagamento de Dividendos
                 divs_today_nr = np.sum(shares_nr * divs[i])
                 divs_today_r = np.sum(shares_r * divs[i])
                 
-                daily_divs_received[i] = divs_today_nr # Usamos o NR como métrica base de renda
+                daily_divs_received[i] = divs_today_nr
                 
-                cash_nr += divs_today_nr # Sem reinvestir, vai para o caixa render CDI
+                cash_nr += divs_today_nr
                 
-                # 4. Reinvestimento Automático
                 if divs_today_r > 0:
                     amt_per_asset = divs_today_r * weights
                     valid_p = prices[i] > 0
@@ -204,11 +195,9 @@ class PortfolioBacktester:
                     s_bought[valid_p] = amt_per_asset[valid_p] / prices[i][valid_p]
                     shares_r += s_bought
 
-                # 5. Cálculo do Valor Final do Dia
                 port_val_nr[i] = np.sum(shares_nr * prices[i]) + cash_nr
                 port_val_r[i] = np.sum(shares_r * prices[i]) + cash_r
 
-            # Empacotando dados no dicionário exigido pela UI
             performance = pd.DataFrame({
                 'with_reinvest': port_val_r,
                 'no_reinvest': port_val_nr,
@@ -217,13 +206,11 @@ class PortfolioBacktester:
                 'invested_capital': invested_capital
             }, index=dates)
 
-            # Matriz de Dividendos
             df_divs = pd.DataFrame({'divs': daily_divs_received}, index=dates)
             df_divs['year'] = df_divs.index.year
             df_divs['month'] = df_divs.index.month
             div_matrix = df_divs.groupby(['year', 'month'])['divs'].sum().unstack(fill_value=0)
 
-            # --- CÁLCULO DAS MÉTRICAS ESTATÍSTICAS ---
             port_series = performance['with_reinvest']
             daily_rets = port_series.pct_change().fillna(0)
             
@@ -239,7 +226,6 @@ class PortfolioBacktester:
             drawdown = (port_series / cummax) - 1
             max_drawdown = drawdown.min()
             
-            # Beta
             if hasattr(self, 'ibov_series') and self.ibov_series is not None:
                 ib_ret = self.ibov_series.pct_change().fillna(0)
                 cov = np.cov(daily_rets, ib_ret)
@@ -353,15 +339,62 @@ class PortfolioBacktester:
             "Max Drawdown": drawdown.min()
         }
 
-if __name__ == "__main__":
-    tickers = ['BBAS3.SA', 'ITUB4.SA','CMIG4.SA', 'CPLE6.SA', 'CSMG3.SA', 'VIVT3.SA', 'TIMS3.SA', 'BBSE3.SA', 'KLBN11.SA']
-    initial = 800
-    monthly = 600
-    start = '2015-01-01'
+def render():
+    st.header("Portfolio Backtester")
+
+    col1, col2 = st.columns(2)
+    with col1:
+        tickers_input = st.text_input("Tickers (separados por vírgula):", value="BBAS3.SA, ITUB4.SA, CMIG4.SA")
+        initial_inv = st.number_input("Investimento Inicial (R$):", min_value=0.0, value=10000.0, step=1000.0)
+        monthly_inv = st.number_input("Investimento Mensal (R$):", min_value=0.0, value=1000.0, step=100.0)
     
-    bt = PortfolioBacktester(tickers, initial, monthly, start)
-    res = bt.run()
-    if res:
-        bt.display_monthly_income()
-        bt.display_metrics()
-        bt.plot()
+    with col2:
+        start_d = st.date_input("Data de Início:", value=pd.to_datetime("2018-01-01"))
+        end_d = st.date_input("Data de Fim:", value=pd.to_datetime(datetime.now().strftime('%Y-%m-%d')))
+        rf_alloc = st.slider("Alocação em Renda Fixa (%):", min_value=0.0, max_value=100.0, value=0.0, step=5.0) / 100.0
+
+    if st.button("Rodar Backtest do Portfólio"):
+        tickers_list = [t.strip().upper() for t in tickers_input.split(",")]
+        
+        with st.spinner("Buscando dados históricos e calculando retornos..."):
+            try:
+                backtester = PortfolioBacktester(
+                    tickers=tickers_list,
+                    initial_investment=initial_inv,
+                    monthly_investment=monthly_inv,
+                    start_date=start_d.strftime('%Y-%m-%d'),
+                    end_date=end_d.strftime('%Y-%m-%d'),
+                    rf_allocation=rf_alloc
+                )
+                
+                backtester.fetch_data()
+                results = backtester.run_simulation()
+                
+                if results is None or results.empty:
+                    st.error("Nenhum dado gerado para o período selecionado.")
+                    return
+                
+                st.subheader("Métricas de Desempenho")
+                final_row = results.iloc[-1]
+                
+                m1, m2, m3 = st.columns(3)
+                m1.metric("Patrimônio Final (Com Reinvestimento)", f"R$ {final_row['Total_Reinvest']:.2f}")
+                m2.metric("Patrimônio Final (Sem Reinvestimento)", f"R$ {final_row['Total_No_Reinvest']:.2f}")
+                m3.metric("Total Injetado (Capital)", f"R$ {final_row['Total_Injected']:.2f}")
+                
+                st.subheader("Evolução Patrimonial ao Longo do Tempo")
+                fig, ax = plt.subplots(figsize=(12, 6))
+                ax.plot(results.index, results['Total_Reinvest'], label="Com Reinvestimento de Dividendos", linewidth=2)
+                ax.plot(results.index, results['Total_No_Reinvest'], label="Sem Reinvestimento de Dividendos", linewidth=1.5, linestyle="--")
+                ax.plot(results.index, results['Total_Injected'], label="Capital Injetado", linewidth=1.5, color="gray")
+                
+                ax.set_title("Evolução do Portfólio")
+                ax.set_xlabel("Data")
+                ax.set_ylabel("Valor (R$)")
+                ax.legend()
+                ax.grid(True, linestyle="--", alpha=0.5)
+                
+                st.pyplot(fig)
+                
+            except Exception as e:
+                st.error(f"Erro ao executar o backtest: {str(e)}")

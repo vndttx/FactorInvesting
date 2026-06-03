@@ -1,6 +1,7 @@
 import yfinance as yf
 import pandas as pd
 import numpy as np
+import streamlit as st
 from datetime import datetime, timedelta
 
 
@@ -96,9 +97,84 @@ class BreadthAnalyzer:
             
         return results, details
 
-if __name__ == "__main__":
-    analyzer = BreadthAnalyzer(mode='full')
-    metrics, df_details = analyzer.calculate_breadth()
-    print("\nMarket Breadth (Full Market):")
-    for k, v in metrics.items():
-        print(f"{k}: {v:.1%}")
+def render():
+    st.header("📊 Market Breadth Indicator (Amplitude de Mercado)")
+    st.write("Mede a saúde do mercado calculando a percentagem de ações acima das suas médias móveis.")
+
+    col1, col2 = st.columns(2)
+    with col1:
+        index_choice = st.selectbox("Selecione o Índice Base:", ["IBOVESPA", "Inserir Tickers Manualmente"])
+        
+    with col2:
+        lookback_days = st.number_input("Dias de histórico para o gráfico:", min_value=10, max_value=1000, value=252)
+
+    if index_choice == "IBOVESPA":
+        tickers = IBOV_TICKERS
+    else:
+        raw_tickers = st.text_area("Insira os Tickers separados por vírgula:", value="PETR4.SA, VALE3.SA, ITUB4.SA, BBDC4.SA")
+        tickers = [t.strip().upper() for t in raw_tickers.split(",") if t.strip()]
+
+    if st.button("Calcular Market Breadth"):
+        with st.spinner("Descarregando dados e calculando médias móveis..."):
+            try:
+                # Instancia a classe original
+                breadth_calc = MarketBreadth(tickers=tickers, mas=[20, 50, 200])
+                
+                # Força a busca dos dados respeitando a janela de dias solicitada
+                end_date = datetime.now()
+                start_date = end_date - timedelta(days=int(lookback_days) + 300) # Buffer para médias de 200
+                
+                breadth_calc.data = yf.download(tickers, start=start_date.strftime('%Y-%m-%d'), end=end_date.strftime('%Y-%m-%d'), progress=False)['Close']
+                breadth_calc.data = breadth_calc.data.dropna(how='all').ffill()
+                breadth_calc.tickers = breadth_calc.data.columns.tolist()
+
+                # Executa os cálculos
+                results, details = breadth_calc.calculate_breadth()
+
+                if not results:
+                    st.error("Não foi possível calcular os indicadores com os dados atuais.")
+                    return
+
+                # Exibição dos cards de métricas atuais
+                st.subheader("Estado Atual do Mercado")
+                m1, m2, m3 = st.columns(3)
+                m1.metric("Acima de MM20 (Curto Prazo)", f"{results.get('MA20', 0)*100:.1f}%")
+                m2.metric("Acima de MM50 (Médio Prazo)", f"{results.get('MA50', 0)*100:.1f}%")
+                m3.metric("Acima de MM200 (Longo Prazo)", f"{results.get('MA200', 0)*100:.1f}%")
+
+                # Cálculo do histórico do Breadth para gerar o gráfico temporal
+                st.subheader("Evolução Histórica da Amplitude")
+                
+                hist_breadth = pd.DataFrame(index=breadth_calc.data.index)
+                for ma in [20, 50, 200]:
+                    ma_df = breadth_calc.data.rolling(window=ma).mean()
+                    above = breadth_calc.data > ma_df
+                    hist_breadth[f'MM{ma}'] = (above.sum(axis=1) / breadth_calc.data.notna().sum(axis=1)) * 100
+
+                # Corta o dataframe para exibir apenas a janela escolhida pelo usuário
+                hist_breadth = hist_breadth.tail(int(lookback_days))
+
+                fig, ax = plt.subplots(figsize=(12, 5))
+                ax.plot(hist_breadth.index, hist_breadth['MM20'], label='Acima de MM20', alpha=0.6)
+                ax.plot(hist_breadth.index, hist_breadth['MM50'], label='Acima de MM50', linewidth=2)
+                ax.plot(hist_breadth.index, hist_breadth['MM200'], label='Acima de MM200', linewidth=2, color='black')
+                
+                ax.axhline(80, color='red', linestyle='--', alpha=0.5, label='Sobrecomprado (80%)')
+                ax.axhline(20, color='green', linestyle='--', alpha=0.5, label='Sobrevendido (20%)')
+                
+                ax.set_title("Percentagem de Ativos Acima da Média Móvel")
+                ax.set_ylabel("% de Ativos")
+                ax.legend(loc='upper left')
+                ax.grid(True, linestyle='--', alpha=0.3)
+                
+                st.pyplot(fig)
+
+                # Tabela detalhada individual
+                st.subheader("Visão Detalhada por Ativo")
+                details_display = details.copy()
+                for ma in [20, 50, 200]:
+                    details_display[f'Above{ma}'] = details_display[f'Above{ma}'].map({True: "🟢 Sim", False: "🔴 Não"})
+                st.dataframe(details_display[['Price', 'Above20', 'Above50', 'Above200']], use_container_width=True)
+
+            except Exception as e:
+                st.error(f"Erro ao processar o Market Breadth: {str(e)}")

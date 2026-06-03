@@ -2,6 +2,7 @@ import yfinance as yf
 import pandas as pd
 from datetime import datetime, timedelta
 import math
+import streamlit as st
 
 def get_financial_data(ticker_obj):
     try:
@@ -74,52 +75,46 @@ def calculate_peg(data):
     except:
         return None
 
-def analyze_valuation():
-    print("=== Multi-Stock Valuation Comparison ===")
-    user_input = input("Enter up to 4 Brazilian Tickers separated by space (e.g., PETR4 VALE3 ITUB4): ").strip().upper()
+def render():
+    st.header("Multi-Stock Valuation Comparison")
     
-    ticker_list = user_input.split()[:4]
-    if not ticker_list:
-        print("No tickers provided.")
-        return
-
-    comparison_data = []
-
-    for t in ticker_list:
-        symbol = t if t.endswith(".SA") else f"{t}.SA"
-        print(f"Fetching {symbol}...")
-        stock = yf.Ticker(symbol)
-        data = get_financial_data(stock)
-        
-        if data:
-            bazin_p, _ = calculate_bazin(data)
-            graham_p = calculate_graham(data)
-            peg_v = calculate_peg(data)
-            
-            comparison_data.append({
-                'Ticker': data['symbol'].replace('.SA', ''),
-                'Price': f"R$ {data['current_price']:.2f}",
-                'Bazin': f"R$ {bazin_p:.2f}" if bazin_p else "N/A",
-                'Graham': f"R$ {graham_p:.2f}" if graham_p else "N/A",
-                'P/E': f"{data['pe_ratio']:.2f}x" if data['pe_ratio'] else "N/A",
-                'PEG': f"{peg_v:.2f}" if peg_v else "N/A"
-            })
-
-    if not comparison_data:
-        print("No valid data found.")
-        return
-
-    print("\n" + "="*85)
-    row_format = "{:<12} | {:<12} | {:<12} | {:<12} | {:<12} | {:<12}"
-    print(row_format.format("TICKER", "PRICE", "BAZIN", "GRAHAM", "P/E", "PEG"))
-    print("-" * 85)
+    user_input = st.text_input(
+        "Insira até 4 tickers brasileiros separados por espaço (ex: PETR4 VALE3 ITUB4):", 
+        value="PETR4 VALE3 ITUB4"
+    ).strip().upper()
     
-    for row in comparison_data:
-        print(row_format.format(
-            row['Ticker'], row['Price'], row['Bazin'], 
-            row['Graham'], row['P/E'], row['PEG']
-        ))
-    print("="*85)
+    if st.button("Executar Análise de Valuation"):
+        ticker_list = user_input.split()[:4]
+        if not ticker_list:
+            st.warning("Nenhum ticker foi fornecido.")
+            return
 
-if __name__ == "__main__":
-    analyze_valuation()
+        comparison_data = []
+
+        with st.spinner("Procurando dados no Yahoo Finance..."):
+            for t in ticker_list:
+                symbol = t if t.endswith(".SA") else f"{t}.SA"
+                stock = yf.Ticker(symbol)
+                data = get_financial_data(stock)
+                
+                if data:
+                    bazin_p, _ = calculate_bazin(data)
+                    graham_p = calculate_graham(data)
+                    peg_v = calculate_peg(data)
+                    
+                    comparison_data.append({
+                        'Ticker': data['symbol'].replace('.SA', ''),
+                        'Preço Atual': f"R$ {data['current_price']:.2f}" if data['current_price'] else "N/A",
+                        'Preço Justo Bazin': f"R$ {bazin_p:.2f}" if bazin_p else "N/A",
+                        'Preço Justo Graham': f"R$ {graham_p:.2f}" if graham_p else "N/A",
+                        'P/L': f"{data['pe_ratio']:.2f}x" if data['pe_ratio'] else "N/A",
+                        'PEG Ratio': f"{peg_v:.2f}" if peg_v else "N/A"
+                    })
+
+        if not comparison_data:
+            st.error("Nenhum dado válido encontrado para os tickers informados.")
+            return
+
+        df_result = pd.DataFrame(comparison_data)
+        st.subheader("Resultados Comparativos")
+        st.dataframe(df_result, use_container_width=True, hide_index=True)
