@@ -80,7 +80,7 @@ def render():
     
     user_input = st.text_input(
         "Insira até 4 tickers brasileiros separados por espaço (ex: PETR4 VALE3 ITUB4):", 
-        value="PETR4 VALE3 ITUB4"
+        value="BBAS3 ABCB4 ITUB3 BBDC4"
     ).strip().upper()
     
     if st.button("Executar Análise de Valuation"):
@@ -97,18 +97,33 @@ def render():
                 stock = yf.Ticker(symbol)
                 data = get_financial_data(stock)
                 
-                if data:
+                if data and data['current_price']:
                     bazin_p, _ = calculate_bazin(data)
                     graham_p = calculate_graham(data)
-                    peg_v = calculate_peg(data)
+                    
+                    # Cálculo do Implied Value (Média de Bazin e Graham se ambos existirem)
+                    valid_prices = [p for p in [bazin_p, graham_p] if p is not None and p > 0]
+                    implied_value = sum(valid_prices) / len(valid_prices) if valid_prices else None
+                    
+                    # Cálculo de Upside, Status e Notes
+                    if implied_value:
+                        upside = ((implied_value / data['current_price']) - 1) * 100
+                        status = "🟢 BUY" if upside > 15 else ("🔴 SELL" if upside < -5 else "🟡 HOLD")
+                        notes = f"Margem segura de {upside:.1f}% baseada nos modelos." if upside > 0 else "Preço atual acima do valor justo estimado."
+                    else:
+                        upside = None
+                        status = "⚪ N/A"
+                        notes = "Dados insuficientes para cálculo de valor justo."
                     
                     comparison_data.append({
                         'Ticker': data['symbol'].replace('.SA', ''),
-                        'Preço Atual': f"R$ {data['current_price']:.2f}" if data['current_price'] else "N/A",
-                        'Preço Justo Bazin': f"R$ {bazin_p:.2f}" if bazin_p else "N/A",
-                        'Preço Justo Graham': f"R$ {graham_p:.2f}" if graham_p else "N/A",
-                        'P/L': f"{data['pe_ratio']:.2f}x" if data['pe_ratio'] else "N/A",
-                        'PEG Ratio': f"{peg_v:.2f}" if peg_v else "N/A"
+                        'Current Price': f"R$ {data['current_price']:.2f}",
+                        'Bazin Price': f"R$ {bazin_p:.2f}" if bazin_p else "N/A",
+                        'Graham Price': f"R$ {graham_p:.2f}" if graham_p else "N/A",
+                        'Implied Value': f"R$ {implied_value:.2f}" if implied_value else "N/A",
+                        'Upside': f"{upside:.2f}%" if upside is not None else "N/A",
+                        'Status': status,
+                        'Notes': notes
                     })
 
         if not comparison_data:
