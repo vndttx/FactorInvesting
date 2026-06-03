@@ -1,4 +1,5 @@
 import streamlit as st
+from datetime import datetime
 import matplotlib.pyplot as plt
 
 def render():
@@ -7,8 +8,7 @@ def render():
     col1, col2 = st.columns(2)
     with col1:
         tickers_input = st.text_input("Tickers (separados por vírgula):", value="BBAS3.SA, ITUB4.SA, CMIG4.SA, VALE3.SA")
-        start_d = st.date_input("Data de Início:", value=pd.to_datetime("2020-01-01"))
-    
+        start_d = st.date_input("Data de Início:", value=datetime(2020, 1, 1))    
     with col2:
         end_d = st.date_input("Data de Fim:", value=pd.to_datetime(pd.Timestamp.now().strftime('%Y-%m-%d')))
         num_portfolios = st.number_input("Número de Simulações (Monte Carlo):", min_value=100, max_value=50000, value=5000, step=500)
@@ -82,7 +82,6 @@ def render():
                 ax.grid(True, linestyle='--', alpha=0.5)
                 st.pyplot(fig)
 
-                # Gráfico de Evolução Patrimonial
                 st.subheader("Evolução Patrimonial das Estratégias")
                 fig_curve, ax_curve = plt.subplots(figsize=(10, 5))
                 ax_curve.plot(max_sharpe['EquityCurve'], label='Max Sharpe', color='red')
