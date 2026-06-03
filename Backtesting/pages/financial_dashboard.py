@@ -1,14 +1,19 @@
+import sys
+import os
+
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
 import streamlit as st
 import pandas as pd
 import yfinance as yf
 from datetime import datetime
 import matplotlib.pyplot as plt
+
 import valuation
 import backtest_tool
 import optimization_tool
 import market_breadth
 import rrg_tool
-
 
 st.set_page_config(page_title="Dashboard Financeiro", layout="wide")
 st.title("📊 Dashboard Financeiro")
