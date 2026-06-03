@@ -18,7 +18,7 @@ try:
     from Backtesting import fund_tool
 except ImportError:
     # If running directly from Backtesting folder
-    import fund_tool
+    import pages.fund_tool as fund_tool
 
 class FundDashboardApp(tk.Tk):
     def __init__(self):

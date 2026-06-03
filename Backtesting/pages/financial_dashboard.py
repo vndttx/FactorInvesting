@@ -4,19 +4,19 @@ import numpy as np
 import yfinance as yf
 import tkinter as tk
 import streamlit as st
-from backtest_tool import rodar_backtest
+from pages.backtest_tool import rodar_backtest
 from tkinter import ttk, messagebox
 import sys
 import os
 import threading
 import matplotlib
 import matplotlib.pyplot as plt
-import valuation
-import backtest_tool
-import optimization_tool
-import market_breadth
-import rrg_tool
-import fund_tool
+import pages.valuation as valuation
+import pages.backtest_tool as backtest_tool
+import pages.optimization_tool as optimization_tool
+import pages.market_breadth as market_breadth
+import pages.rrg_tool as rrg_tool
+import pages.fund_tool as fund_tool
 from matplotlib.figure import Figure
 import matplotlib.ticker as mtick
 

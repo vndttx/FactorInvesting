@@ -7,11 +7,11 @@ import pandas as pd
 sys.path.append(os.path.join(os.getcwd(), 'Backtesting'))
 
 try:
-    import optimization_tool
+    import pages.optimization_tool as optimization_tool
 except ImportError:
     # Try absolute path if running from root
     sys.path.append(r'd:\Repositorios\FactorInvesting\Backtesting')
-    import optimization_tool
+    import pages.optimization_tool as optimization_tool
 
 def test_optimization():
     print("Testing PortfolioOptimizer...")
