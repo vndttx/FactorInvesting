@@ -117,14 +117,25 @@ def render():
 
     col1, col2 = st.columns(2)
     with col1:
-        raw_tickers = st.text_input("Ativos (separados por vírgula):", value="PETR4.SA, VALE3.SA, ITUB4.SA, BBDC4.SA, WEGE3.SA")
-        benchmark = st.text_input("Benchmark:", value="BOVA11.SA")
+        raw_tickers = st.text_input("Ativos (separados por vírgula):", value="PETR4, VALE3, ITUB4, BBDC4, WEGE3")
+        benchmark = st.text_input("Benchmark:", value="BOVA11")
     with col2:
         start_d = st.date_input("Data Inicial:", value=pd.to_datetime("2024-01-01"))
         trail_length = st.slider("Tamanho da Cauda (Semanas/Pontos):", min_value=2, max_value=30, value=10)
 
     if st.button("Gerar Gráfico RRG"):
-        tickers_list = [t.strip().upper() for t in raw_tickers.split(",") if t.strip()]
+        tickers_list = []
+        for t in raw_tickers.split(","):
+            t = t.strip().upper()
+            if t:
+                if not t.endswith(".SA") and not "." in t and not t.startswith("^") and t[-1].isdigit():
+                    t = f"{t}.SA"
+                tickers_list.append(t)
+        
+        benchmark_ticker = benchmark.strip().upper()
+        if benchmark_ticker:
+            if not benchmark_ticker.endswith(".SA") and not "." in benchmark_ticker and not benchmark_ticker.startswith("^") and benchmark_ticker[-1].isdigit():
+                benchmark_ticker = f"{benchmark_ticker}.SA"
         
         if not tickers_list:
             st.warning("Insira pelo menos um ativo válido.")
@@ -135,12 +146,12 @@ def render():
                 # Instancia e roda os cálculos da classe original
                 rrg = RRGCalculator(
                     tickers=tickers_list,
-                    benchmark=benchmark.strip().upper(),
+                    benchmark=benchmark_ticker,
                     start_date=start_d.strftime('%Y-%m-%d')
                 )
                 
                 rrg.fetch_data()
-                rrg.calculate_rrg()
+                rrg.calculate()
                 
                 latest_values = rrg.get_latest_values()
                 trails = rrg.get_trails(length=int(trail_length))
@@ -174,7 +185,7 @@ def render():
                         ax.scatter(current['RS_Ratio'], current['RS_Momentum'], s=100, label=ticker)
                         ax.annotate(ticker, (current['RS_Ratio'] + 0.1, current['RS_Momentum'] + 0.1), fontsize=9)
 
-                ax.set_title(f"RRG contra {benchmark.upper()}", fontsize=14, fontweight='bold')
+                ax.set_title(f"RRG contra {benchmark_ticker}", fontsize=14, fontweight='bold')
                 ax.set_xlabel("RS-Ratio")
                 ax.set_ylabel("RS-Momentum")
                 ax.grid(True, linestyle=':', alpha=0.6)

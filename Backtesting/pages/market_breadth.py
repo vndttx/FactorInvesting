@@ -2,6 +2,7 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 import streamlit as st
+import matplotlib.pyplot as plt
 from datetime import datetime, timedelta
 
 
@@ -17,11 +18,11 @@ IBOV_TICKERS = [
 import requests
 
 class BreadthAnalyzer:
-    def __init__(self, mode='default'):
+    def __init__(self, mode='default', tickers=None, mas=None):
         self.mode = mode
-        self.tickers = IBOV_TICKERS
+        self.tickers = tickers if tickers is not None else IBOV_TICKERS
         self.data = pd.DataFrame()
-        self.mas = [9, 21, 50, 80, 200]
+        self.mas = mas if mas is not None else [9, 21, 50, 80, 200]
         
     def fetch_all_b3_tickers(self):
         url = "https://www.fundamentus.com.br/resultado.php"
@@ -110,8 +111,14 @@ def render():
     if index_choice == "IBOVESPA":
         tickers = IBOV_TICKERS
     else:
-        raw_tickers = st.text_area("Insira os Tickers separados por vírgula:", value="PETR4.SA, VALE3.SA, ITUB4.SA, BBDC4.SA")
-        tickers = [t.strip().upper() for t in raw_tickers.split(",") if t.strip()]
+        raw_tickers = st.text_area("Insira os Tickers separados por vírgula:", value="PETR4, VALE3, ITUB4, BBDC4")
+        tickers = []
+        for t in raw_tickers.split(","):
+            t = t.strip().upper()
+            if t:
+                if not t.endswith(".SA") and not "." in t and not t.startswith("^") and t[-1].isdigit():
+                    t = f"{t}.SA"
+                tickers.append(t)
 
     if st.button("Calcular Market Breadth"):
         with st.spinner("Descarregando dados e calculando médias móveis..."):

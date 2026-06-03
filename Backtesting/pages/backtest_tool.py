@@ -368,25 +368,34 @@ def render():
                 )
                 
                 backtester.fetch_data()
-                results = backtester.run()
+                results_dict = backtester.run()
                 
-                if results is None or results.empty:
+                if results_dict is None or 'performance' not in results_dict or results_dict['performance'].empty:
                     st.error("Nenhum dado gerado para o período selecionado.")
                     return
                 
+                performance = results_dict['performance']
+                stats = results_dict['stats']
+                
                 st.subheader("Métricas de Desempenho")
-                final_row = results.iloc[-1]
+                final_row = performance.iloc[-1]
                 
                 m1, m2, m3 = st.columns(3)
-                m1.metric("Patrimônio Final (Com Reinvestimento)", f"R$ {final_row['Total_Reinvest']:.2f}")
-                m2.metric("Patrimônio Final (Sem Reinvestimento)", f"R$ {final_row['Total_No_Reinvest']:.2f}")
-                m3.metric("Total Injetado (Capital)", f"R$ {final_row['Total_Injected']:.2f}")
+                m1.metric("Patrimônio Final (Com Reinvestimento)", f"R$ {final_row['with_reinvest']:.2f}")
+                m2.metric("Patrimônio Final (Sem Reinvestimento)", f"R$ {final_row['no_reinvest']:.2f}")
+                m3.metric("Total Injetado (Capital)", f"R$ {final_row['invested_capital']:.2f}")
+                
+                m4, m5, m6, m7 = st.columns(4)
+                m4.metric("CAGR (Retorno Anualizado)", f"{stats['cagr']:.2f}%")
+                m5.metric("Volatilidade Anual", f"{stats['volatility']:.2f}%")
+                m6.metric("Max Drawdown", f"{stats['max_drawdown']:.2f}%")
+                m7.metric("Beta (vs Ibovespa)", f"{stats['beta']:.2f}")
                 
                 st.subheader("Evolução Patrimonial ao Longo do Tempo")
                 fig, ax = plt.subplots(figsize=(12, 6))
-                ax.plot(results.index, results['Total_Reinvest'], label="Com Reinvestimento de Dividendos", linewidth=2)
-                ax.plot(results.index, results['Total_No_Reinvest'], label="Sem Reinvestimento de Dividendos", linewidth=1.5, linestyle="--")
-                ax.plot(results.index, results['Total_Injected'], label="Capital Injetado", linewidth=1.5, color="gray")
+                ax.plot(performance.index, performance['with_reinvest'], label="Com Reinvestimento de Dividendos", linewidth=2)
+                ax.plot(performance.index, performance['no_reinvest'], label="Sem Reinvestimento de Dividendos", linewidth=1.5, linestyle="--")
+                ax.plot(performance.index, performance['invested_capital'], label="Capital Injetado", linewidth=1.5, color="gray")
                 
                 ax.set_title("Evolução do Portfólio")
                 ax.set_xlabel("Data")

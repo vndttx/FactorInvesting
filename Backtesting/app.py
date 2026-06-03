@@ -13,5 +13,4 @@ Utilize o menu à esquerda para navegar de forma independente entre as abas e da
 
 **Módulos Ativos:**
 * 📊 **Dashboard Financeiro** - Ferramentas de valuation e triagem.
-* 🏦 **Dashboard de Fundos** - Análise comparativa de fundos por CNPJ.
 """)

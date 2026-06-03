@@ -138,7 +138,7 @@ def render():
                     )
                     
                     optimizer.fetch_data()
-                    results, weights, max_sharpe, min_vol, balanced = optimizer.optimize(num_simulations=num_portfolios)
+                    results, max_sharpe, min_vol, balanced = optimizer.optimize(num_portfolios=num_portfolios)
                     
                     if max_sharpe is None:
                         st.error("Não foi possível gerar a otimização com os dados atuais.")
