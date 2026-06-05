@@ -557,7 +557,7 @@ class FinancialDashboardArgs(tk.Tk):
         ttk.Label(input_frame, text="Tickers (comma sep):").grid(row=0, column=0, sticky='w', padx=5, pady=5)
         self.opt_tickers_entry = ttk.Entry(input_frame, width=50)
         self.opt_tickers_entry.grid(row=0, column=1, columnspan=2, sticky='w', padx=5, pady=5)
-        self.opt_tickers_entry.insert(0, "ABCB4, BBAS3, BBSE3, CMIG4, ITUB4, KLBN11, TIMS3, TAEE4")
+        self.opt_tickers_entry.insert(0, "PETR4, UNIP6, CMIG4, BBAS3, BBSE3, ITUB4, CXSE3, SLCE3")
 
         ttk.Label(input_frame, text="Start Date:").grid(row=1, column=0, sticky='w', padx=5, pady=5)
         self.opt_start_entry = ttk.Entry(input_frame, width=15)
