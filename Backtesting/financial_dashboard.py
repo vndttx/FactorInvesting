@@ -1,383 +1,493 @@
+from datetime import datetime
+import pandas as pd
+import numpy as np
+import yfinance as yf
 import tkinter as tk
 from tkinter import ttk, messagebox
 import sys
 import os
-import yfinance as yf
 import threading
 import matplotlib
-matplotlib.use("TkAgg")
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+import matplotlib.pyplot as plt
+import valuation
+import backtest_tool
+import optimization_tool
+import market_breadth
+import rrg_tool
+import fund_tool
 from matplotlib.figure import Figure
 import matplotlib.ticker as mtick
 
+GLOBAL_DATA_CACHE = {}
+
+def get_cached_data(tickers, start_date, end_date):
+    """Recupera dados do yfinance com cache para evitar downloads redundantes."""
+    cache_key = (tuple(sorted(tickers)), start_date, end_date)
+    
+    if cache_key not in GLOBAL_DATA_CACHE:
+        print(f"Baixando novos dados para: {tickers}")
+        data = yf.download(tickers, start=start_date, end=end_date, actions=True)
+        GLOBAL_DATA_CACHE[cache_key] = data
+    else:
+        print(f"Usando dados em cache para: {tickers}")
+        
+    return GLOBAL_DATA_CACHE[cache_key]
+
+plt.style.use('dark_background')
+matplotlib.rcParams.update({
+    "figure.facecolor": "#020D19",
+    "axes.facecolor": "#020D19",
+    "axes.edgecolor": "#1a1a1a",
+    "grid.color": "#011222",
+    "text.color": "#e0e0e0",
+    "axes.labelcolor": "#e0e0e0",
+    "axes.labelweight": "bold",
+    "xtick.color": "#9e9e9e",
+    "ytick.color": "#9e9e9e",
+    "patch.edgecolor": "#020D19",
+    "figure.autolayout": True,
+    "axes.spines.top": False,
+    "axes.spines.right": False
+})
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
-backtesting_dir = os.path.join(current_dir, 'Backtesting')
-if backtesting_dir not in sys.path:
-    sys.path.append(backtesting_dir)
-
+if current_dir not in sys.path:
+    sys.path.append(current_dir)
 
 try:
-    import valuation
-    import backtest_tool
-    import optimization_tool
-    import market_breadth
-    import rrg_tool
-    import fund_tool
-    import pandas as pd
+    matplotlib.use("TkAgg")
     from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 except ImportError as e:
-    messagebox.showerror("Import Error", f"Could not import modules from Backtesting folder.\nError: {e}")
+    messagebox.showerror("Matplotlib Error", 
+        f"Could not find the Matplotlib TkAgg backend.\n\n"
+        f"Error: {e}\n\n"
+        "To fix this, please run the following command in your terminal:\n"
+        "pip install matplotlib --upgrade --force-reinstall")
     sys.exit(1)
 
 
 class FinancialDashboardArgs(tk.Tk):
+    def et_cached_datag(self, tickers, start, end):
+        cache_key = (tuple(sorted(tickers)), start_date, end_date)
+        if cache_key not in GLOBAL_DATA_CACHE:
+         print(f"Baixando novos dados para: {tickers}")
+         data = yf.download(tickers, start=start_date, end=end_date, actions=True)
+         GLOBAL_DATA_CACHE[cache_key] = data
+        else:
+         print(f"Usando dados em cache para: {tickers}")
+        
+        return GLOBAL_DATA_CACHE[cache_key]
+    
     def __init__(self):
         super().__init__()
+        self.is_processing = False
+        self.progress_var = tk.DoubleVar()
         self.title("Factor Investing Dashboard")
         self.geometry("900x720")
-        style = ttk.Style()
-        style.theme_use('clam')
+        self.configure(bg="#020D19")
+        self._setup_dark_theme()
         self.notebook = ttk.Notebook(self)
-        self.notebook.pack(fill='both', expand=True, padx=10, pady=10)
+        self.notebook.pack(fill='both', expand=True, padx=5, pady=5)
         self.create_valuation_tab()
         self.create_backtest_tab()
         self.create_optimization_tab()
         self.create_breadth_tab()
         self.create_rrg_tab()
+        status_frame = tk.Frame(self, height=150, bg="#020D19")
+        status_frame.pack(side=tk.BOTTOM, fill=tk.X, padx=10, pady=5)
+        self.progress_bar = ttk.Progressbar(status_frame, variable=self.progress_var, maximum=100)
+        self.progress_bar.pack(fill=tk.X, pady=2)
+        self.log_console = tk.Text(status_frame, height=6, state='disabled', bg="#1a1a1a", 
+                                   fg="#d4d4d4", font=("Consolas", 9), borderwidth=0)
+        self.log_console.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar = ttk.Scrollbar(status_frame, command=self.log_console.yview)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self.log_console.config(yscrollcommand=scrollbar.set)
 
+    def _setup_dark_theme(self):
+        style = ttk.Style()
+        style.theme_use('clam')
+        
+        bg, fg, accent, highlight, select = "#020D19", "#EFEFEF", "#0B1215", "#101720", "#011222"
+
+        style.configure(".", background=bg, foreground=fg, fieldforeground=fg, font=('Segoe UI', 10), borderwidth=15, highlightthickness=15)
+        style.configure("TNotebook", background=bg, borderwidth=1)
+        style.configure("TNotebook.Tab", background=accent, foreground="#EFEFEF", padding=[22, 10], borderwidth=15)
+        style.map("TNotebook.Tab", background=[("selected", select)], foreground=[("selected", fg)])
+        
+        style.configure("TFrame", background=bg, borderwidth=0)
+        style.configure("TLabelframe", background=bg, foreground=select, borderwidth=0)
+        style.configure("TLabelframe.Label", background=bg, foreground=select, font=('Segoe UI', 10, 'bold'), padding=8)
+        style.configure("TLabel", background=bg, foreground=fg)
+        
+        style.configure("Treeview", background="#101720", foreground=fg, fieldbackground="#101720", borderwidth=0, rowheight=25)
+        style.map("Treeview", background=[("selected", select)], foreground=[("selected", fg)])
+        style.configure("Treeview.Heading", background=highlight, foreground=fg, borderwidth=0, relief="flat", font=('Segoe UI', 9, 'bold'), padding=8)
+        style.map("Treeview.Heading", background=[("active", "#0B1215")])
+
+        style.configure("TButton", background=accent, foreground=fg, borderwidth=0, padding=10, relief="flat")
+        style.map("TButton", background=[("active", highlight)])
+        style.configure("TEntry", fieldbackground="#020D19", foreground=fg, borderwidth=0, relief="flat")
+        style.map("TCheckbutton", background=[("active", bg)])
+
+    @staticmethod
+    def _format_ticker(ticker):
+        t = ticker.strip().upper()
+        if not t: return None
+        return t if ('.' in t or '=' in t) else f"{t}.SA"
+
+    def _format_tickers(self, tickers_str):
+        return [self._format_ticker(t) for t in tickers_str.split(',') if t.strip()]
+
+    def _run_in_thread(self, target, args=()):
+        t = threading.Thread(target=target, args=args, daemon=True)
+        t.start()
+        
+    def log(self, message, level="INFO"):
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        full_message = f"[{timestamp}] [{level}] {message}\n"
+        
+        self.log_console.config(state='normal')
+        self.log_console.insert(tk.END, full_message)
+        self.log_console.see(tk.END)
+        self.log_console.config(state='disabled')
+        self.update_idletasks()
+
+    def _clear_frame(self, frame, exclude=None):
+        for widget in frame.winfo_children():
+            if exclude and widget == exclude: continue
+            widget.destroy()
 
     def create_valuation_tab(self):
         self.tab_val = ttk.Frame(self.notebook)
         self.notebook.add(self.tab_val, text="Stock Valuation")
 
-
         input_frame = ttk.LabelFrame(self.tab_val, text="Input", padding=10)
         input_frame.pack(fill='x', padx=10, pady=10)
 
-
-        ttk.Label(input_frame, text="Ticker (e.g., BBAS3):").pack(side='left', padx=5)
-        self.val_ticker_entry = ttk.Entry(input_frame, width=15)
+        ttk.Label(input_frame, text="Tickers (espaço ou vírgula):").pack(side='left', padx=5)
+        self.val_ticker_entry = ttk.Entry(input_frame, width=30)
         self.val_ticker_entry.pack(side='left', padx=5)
         self.val_ticker_entry.bind('<Return>', lambda e: self.run_valuation())
-
 
         self.btn_analyze = ttk.Button(input_frame, text="Analyze", command=self.run_valuation)
         self.btn_analyze.pack(side='left', padx=5)
 
-
         results_frame = ttk.LabelFrame(self.tab_val, text="Valuation Results", padding=10)
         results_frame.pack(fill='both', expand=True, padx=10, pady=10)
 
-
         columns = ("Method", "Implied Value", "Upside", "Status", "Notes")
         self.val_tree = ttk.Treeview(results_frame, columns=columns, show='headings')
-
-
         for col in columns:
             self.val_tree.heading(col, text=col)
             self.val_tree.column(col, width=120)
 
-
         self.val_tree.column("Method", width=150)
         self.val_tree.column("Notes", width=250)
-
-
         self.val_tree.pack(fill='both', expand=True)
 
-
-        self.val_status_label = ttk.Label(results_frame, text="Ready.", font=('Arial', 9, 'italic'))
+        self.val_status_label = ttk.Label(results_frame, text="Ready.", font=('Segoe UI', 9, 'italic'))
         self.val_status_label.pack(pady=5, anchor='w')
 
+    def _add_labeled_entry(self, parent, label_text, row, col, width=15, default_val="", columnspan=1):
+        ttk.Label(parent, text=label_text).grid(row=row, column=col, sticky='w', padx=5, pady=5)
+        entry = ttk.Entry(parent, width=width)
+        entry.grid(row=row, column=col+1, columnspan=columnspan, sticky='w', padx=5, pady=5)
+        entry.insert(0, default_val)
+        return entry
 
     def create_backtest_tab(self):
         self.tab_bt = ttk.Frame(self.notebook)
         self.notebook.add(self.tab_bt, text="Portfolio Backtest")
 
-
         input_frame = ttk.LabelFrame(self.tab_bt, text="Configuration", padding=10)
         input_frame.pack(fill='x', padx=10, pady=10)
 
-
-        ttk.Label(input_frame, text="Tickers (comma sep):").grid(row=0, column=0, sticky='w', padx=5, pady=5)
-        self.bt_tickers_entry = ttk.Entry(input_frame, width=50)
-        self.bt_tickers_entry.grid(row=0, column=1, columnspan=3, sticky='w', padx=5, pady=5)
-        self.bt_tickers_entry.insert(0, "BBAS3, BBSE3, CMIG4, CXSE3")
-
-
-        ttk.Label(input_frame, text="Initial Invest (BRL):").grid(row=1, column=0, sticky='w', padx=5, pady=5)
-        self.bt_initial_entry = ttk.Entry(input_frame, width=15)
-        self.bt_initial_entry.grid(row=1, column=1, sticky='w', padx=5, pady=5)
-        self.bt_initial_entry.insert(0, "1000")
-
-
-        ttk.Label(input_frame, text="Monthly Invest (BRL):").grid(row=1, column=2, sticky='w', padx=5, pady=5)
-        self.bt_monthly_entry = ttk.Entry(input_frame, width=15)
-        self.bt_monthly_entry.grid(row=1, column=3, sticky='w', padx=5, pady=5)
-        self.bt_monthly_entry.insert(0, "600")
-
-
-        ttk.Label(input_frame, text="Start Date (YYYY-MM-DD):").grid(row=2, column=0, sticky='w', padx=5, pady=5)
-        self.bt_start_entry = ttk.Entry(input_frame, width=15)
-        self.bt_start_entry.grid(row=2, column=1, sticky='w', padx=5, pady=5)
-        self.bt_start_entry.insert(0, "2015-01-01")
-
-
-        ttk.Label(input_frame, text="Risk Free Alloc (%):").grid(row=2, column=2, sticky='w', padx=5, pady=5)
-        self.bt_rf_alloc_entry = ttk.Entry(input_frame, width=15)
-        self.bt_rf_alloc_entry.grid(row=2, column=3, sticky='w', padx=5, pady=5)
-        self.bt_rf_alloc_entry.insert(0, "0")
-
+        self.bt_tickers_entry = self._add_labeled_entry(input_frame, "Tickers (comma sep):", 0, 0, 50, "BBAS3, BBSE3, CMIG4, CXSE3, TAEE4, TIMS3", 3)
+        self.bt_initial_entry = self._add_labeled_entry(input_frame, "Initial Invest (BRL):", 1, 0, 15, "1000")
+        self.bt_monthly_entry = self._add_labeled_entry(input_frame, "Monthly Invest (BRL):", 1, 2, 15, "600")
+        self.bt_start_entry   = self._add_labeled_entry(input_frame, "Start Date (YYYY-MM-DD):", 2, 0, 15, "2015-01-01")
+        self.bt_rf_alloc_entry = self._add_labeled_entry(input_frame, "Risk Free Alloc (%):", 2, 2, 15, "0")
 
         self.btn_run_bt = ttk.Button(input_frame, text="Run Backtest", command=self.run_backtest_thread)
         self.btn_run_bt.grid(row=3, column=3, sticky='e', padx=5, pady=5)
 
+        self.progress_var = tk.DoubleVar()
+        self.progress_bar = ttk.Progressbar(self.tab_bt, variable=self.progress_var, maximum=100)
+        self.progress_bar.pack(fill='x', padx=10, pady=2)
 
         self.bt_results_frame = ttk.LabelFrame(self.tab_bt, text="Performance Outcomes", padding=10)
         self.bt_results_frame.pack(fill='both', expand=True, padx=10, pady=10)
 
-
         self.bt_notebook = ttk.Notebook(self.bt_results_frame)
         self.bt_notebook.pack(fill='both', expand=True)
-
 
         self.bt_tab_summary = ttk.Frame(self.bt_notebook)
         self.bt_notebook.add(self.bt_tab_summary, text="Summary & Chart")
 
-
-        self.bt_text_output = tk.Text(self.bt_tab_summary, height=10, width=80)
-        self.bt_text_output.pack(side='left', fill='y', padx=5, pady=5)
-
+        self.bt_tree = ttk.Treeview(self.bt_tab_summary, columns=("Metric", "Value", "Notes"), show='headings', height=8)
+        self.bt_tree.heading("Metric", text="Metric")
+        self.bt_tree.heading("Value", text="Value")
+        self.bt_tree.heading("Notes", text="Notes")
+        self.bt_tree.column("Metric", width=120)
+        self.bt_tree.column("Value", width=100)
+        self.bt_tree.pack(side='left', fill='y', padx=5, pady=5)
 
         self.bt_chart_frame = ttk.Frame(self.bt_tab_summary)
-        self.bt_chart_frame.pack(side='left', fill='both', expand=True, padx=5, pady=5)
+        self.bt_chart_frame.pack(side='right', fill='both', expand=True, padx=5, pady=5)
 
+        self.fig_bt = Figure(figsize=(5, 4), dpi=100)
+        self.ax_bt = self.fig_bt.add_subplot(111)
+        from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+        self.canvas_bt = FigureCanvasTkAgg(self.fig_bt, master=self.bt_chart_frame)
+        self.canvas_bt.get_tk_widget().pack(fill='both', expand=True)
 
         self.bt_tab_divs = ttk.Frame(self.bt_notebook)
         self.bt_notebook.add(self.bt_tab_divs, text="Monthly Dividends")
-
-
+        
         self.div_tree = ttk.Treeview(self.bt_tab_divs, show='headings')
-        self.div_tree.pack(fill='both', expand=True, padx=5, pady=5)
-
-
+        self.div_tree.pack(side='left', fill='both', expand=True, padx=5, pady=5)
+        
         vsb = ttk.Scrollbar(self.bt_tab_divs, orient="vertical", command=self.div_tree.yview)
         vsb.pack(side='right', fill='y')
-        hsb = ttk.Scrollbar(self.bt_tab_divs, orient="horizontal", command=self.div_tree.xview)
-        hsb.pack(side='bottom', fill='x')
-        self.div_tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
-
+        self.div_tree.configure(yscrollcommand=vsb.set)
 
     def run_valuation(self):
-        ticker_input = self.val_ticker_entry.get().strip().upper()
-        if not ticker_input:
-            messagebox.showwarning("Input Error", "Please enter a ticker symbol.")
+        raw_input = self.val_ticker_entry.get().replace(',', ' ')
+        tickers = [self._format_ticker(t) for t in raw_input.split() if t.strip()][:4]
+    
+        if not tickers:
+            messagebox.showwarning("Erro de Entrada", "Por favor, insira pelo menos um ticker.")
             return
 
-
-        if not ticker_input.endswith(".SA"):
-            ticker = f"{ticker_input}.SA"
-        else:
-            ticker = ticker_input
-
-
-        self.val_status_label.config(text=f"Fetching data for {ticker}...")
+        self.val_status_label.config(text=f"Buscando dados para: {', '.join(tickers)}...")
         self.val_tree.delete(*self.val_tree.get_children())
         self.update_idletasks()
+        
+        self._run_in_thread(self._process_valuation_multi, args=(tickers,))
 
-
-        t = threading.Thread(target=self._process_valuation, args=(ticker,))
-        t.start()
-
-
-    def _process_valuation(self, ticker):
+    def _process_valuation_multi(self, tickers):
         try:
-            stock = yf.Ticker(ticker)
-            data = valuation.get_financial_data(stock)
+            tickers = sorted(tickers)
+            
+            groups = {
+                "Bazin": [],
+                "Graham": [],
+                "P/E (15x)": [],
+                "PEG Ratio": []
+            }
 
+            for ticker in tickers:
+                stock = yf.Ticker(ticker)
+                data = valuation.get_financial_data(stock)
 
-            if not data:
-                self.after(0, lambda: messagebox.showerror("Error", "Could not fetch data (check ticker or internet)."))
-                self.after(0, lambda: self.val_status_label.config(text="Error."))
-                return
+                if not data:
+                    continue
 
+                price = data['current_price']
+                t_short = ticker.replace('.SA', '')
 
-            rows = []
+                bazin_price, bazin_dy = valuation.calculate_bazin(data)
+                if bazin_price:
+                    upside = ((bazin_price - price) / price) * 100
+                    status = "Cheap" if bazin_price > price else "Expensive"
+                    groups["Bazin"].append((f"{t_short}", f"R$ {bazin_price:.2f}", f"{upside:+.2f}%", status, f"Yield: {bazin_dy:.2f}%"))
+                else:
+                    groups["Bazin"].append((f"{t_short}", "N/A", "-", "-", "No Data"))
 
+                graham_price = valuation.calculate_graham(data)
+                if graham_price:
+                    upside = ((graham_price - price) / price) * 100
+                    status = "Cheap" if graham_price > price else "Expensive"
+                    groups["Graham"].append((f"{t_short}", f"R$ {graham_price:.2f}", f"{upside:+.2f}%", status, f"Price: R$ {price:.2f}"))
+                else:
+                    groups["Graham"].append((f"{t_short}", "N/A", "-", "-", "No Data"))
 
-            price = data['current_price']
+                pe, eps = data.get('pe_ratio'), data.get('eps')
+                if pe and eps:
+                    fair_pe = 15 * eps
+                    upside_pe = ((fair_pe - price) / price) * 100
+                    status_pe = "Cheap" if fair_pe > price else "Expensive"
+                    groups["P/E (15x)"].append((f"{t_short}", f"R$ {fair_pe:.2f}", f"{upside_pe:+.2f}%", status_pe, f"P/E: {pe:.2f}"))
+                else:
+                    groups["P/E (15x)"].append((f"{t_short}", "N/A", "-", "-", "No Data"))
 
+                peg_v = valuation.calculate_peg(data)
+                if peg_v:
+                    status = "Undervalued" if peg_v < 1 else "Overvalued"
+                    groups["PEG Ratio"].append((f"{t_short}", f"{peg_v:.2f}", "-", status, "Ideal < 1.0"))
+                else:
+                    groups["PEG Ratio"].append((f"{t_short}", "N/A", "-", "-", "No Data"))
 
-            bazin_price, bazin_dy = valuation.calculate_bazin(data)
-            if bazin_price:
-                upside = ((bazin_price - price) / price) * 100
-                status = "Cheap" if bazin_price > price else "Expensive"
-                rows.append(("Décio Bazin", f"R$ {bazin_price:.2f}", f"{upside:+.2f}%", status, f"Avg Yield: {bazin_dy:.2f}% (Target 6%)"))
-            else:
-                rows.append(("Décio Bazin", "N/A", "-", "-", "Insufficient Data"))
+            final_rows = []
+            for method, rows in groups.items():
+                if rows:
+                    final_rows.append((f"--- {method.upper()} ---", "", "", "", ""))
+                    final_rows.extend(rows)
+                    final_rows.append(("", "", "", "", ""))
 
-
-            graham_price = valuation.calculate_graham(data)
-            if graham_price:
-                upside = ((graham_price - price) / price) * 100
-                status = "Cheap" if graham_price > price else "Expensive"
-                rows.append(("Graham Number", f"R$ {graham_price:.2f}", f"{upside:+.2f}%", status, "Sqrt(22.5 * EPS * BVPS)"))
-            else:
-                rows.append(("Graham Number", "N/A", "-", "-", "Neg Earnings/Book"))
-
-
-            pe = data.get('pe_ratio')
-            eps = data.get('eps')
-            if pe and eps:
-                fair_pe = 15 * eps
-                upside_pe = ((fair_pe - price) / price) * 100
-                status_pe = "Cheap" if fair_pe > price else "Expensive"
-                rows.append(("P/E Ratio (15x)", f"R$ {fair_pe:.2f}", f"{upside_pe:+.2f}%", status_pe, f"Current P/E: {pe:.2f}"))
-            else:
-                rows.append(("P/E Ratio", "N/A", "-", "-", "-"))
-
-
-            peg, peg_note = valuation.calculate_peg(data)
-            if peg:
-                status = "Undervalued" if peg < 1 else "Overvalued"
-                rows.append(("PEG Ratio", f"{peg:.2f}", "-", status, f"<1.0 is Good ({peg_note})"))
-            else:
-                rows.append(("PEG Ratio", "N/A", "-", "-", "-"))
-
-
-            self.after(0, lambda: self._update_val_table(rows, price))
-
+            self.after(0, lambda: self._update_val_table_multi(final_rows))
 
         except Exception as e:
-            self.after(0, lambda: messagebox.showerror("Error", str(e)))
+            error_msg = str(e)
+            self.after(0, lambda: messagebox.showerror("Error", error_msg))
 
-
-    def _update_val_table(self, rows, current_price):
+    def _update_val_table_multi(self, rows):
+        self.val_tree.delete(*self.val_tree.get_children())
         for row in rows:
             self.val_tree.insert("", "end", values=row)
-        self.val_status_label.config(text=f"Analysis complete. Current Price: R$ {current_price:.2f}")
-
-
-    def run_backtest_thread(self):
-
-
-        tickers_str = self.bt_tickers_entry.get()
-        init_str = self.bt_initial_entry.get()
-        monthly_str = self.bt_monthly_entry.get()
-        start_date = self.bt_start_entry.get()
-        rf_alloc_str = self.bt_rf_alloc_entry.get()
-
-
-        if not tickers_str or not init_str or not monthly_str or not start_date or not rf_alloc_str:
-            messagebox.showwarning("Missing Inputs", "Please fill all fields.")
-            return
-
-
-        raw_tickers = [t.strip().upper() for t in tickers_str.split(',') if t.strip()]
-        tickers = []
-        for t in raw_tickers:
-
-
-            if '.' in t or '=' in t:
-                tickers.append(t)
-            else:
-
-
-                tickers.append(f"{t}.SA")
-
-
+        self.val_status_label.config(text="Comparação concluída.")
+        
+    def _process_backtest(self, tickers, start_date, end_date, initial_investment, monthly_investment, rf_allocation):
         try:
-            initial = float(init_str)
-            monthly = float(monthly_str)
-            rf_alloc = float(rf_alloc_str)
-            if rf_alloc < 0 or rf_alloc > 100:
-                 messagebox.showerror("Invalid Input", "Risk Free Allocation must be between 0 and 100.")
-                 return
-            rf_alloc_decimal = rf_alloc / 100.0
+            self.is_processing = True
+            data = get_cached_data(tickers, start_date, end_date)
+            
+            if data is None or data.empty:
+                raise ValueError("Falha ao obter dados.")
 
+            bt = backtest_tool.PortfolioBacktester(
+                tickers=tickers,
+                start_date=start_date,
+                end_date=end_date,
+                initial_investment=initial_investment,
+                monthly_investment=monthly_investment,
+                rf_allocation=rf_allocation,
+                injected_data=data
+            )
+            
+            results = bt.run()
+            
+            if results is None:
+                raise ValueError("O backtest não retornou resultados válidos.")
 
-        except ValueError:
-            messagebox.showerror("Invalid Number", "Investments/Allocation must be numbers.")
-            return
-
-
-        self.btn_run_bt.config(state='disabled')
-        self.bt_text_output.delete("1.0", tk.END)
-        self.bt_text_output.insert(tk.END, "Running backtest... Please wait.\n")
-
-
-        t = threading.Thread(target=self._process_backtest, args=(tickers, initial, monthly, start_date, rf_alloc_decimal))
-        t.start()
-
-
-    def _process_backtest(self, tickers, initial, monthly, start_date, rf_alloc_decimal):
-        try:
-            bt = backtest_tool.PortfolioBacktester(tickers, initial, monthly, start_date, risk_free_allocation=rf_alloc_decimal)
-            bt.run()
-
-
-            m_reinvest = bt.calculate_metrics(bt.daily_returns_reinvest, bt.risk_free_daily_series.values)
-            m_no_reinvest = bt.calculate_metrics(bt.daily_returns_no_reinvest, bt.risk_free_daily_series.values)
-
-
-            beta_reinvest = bt.calculate_beta(bt.daily_returns_reinvest)
-            beta_no_reinvest = bt.calculate_beta(bt.daily_returns_no_reinvest)
-
-
-            m_reinvest["Beta (vs Ibov)"] = beta_reinvest
-            m_no_reinvest["Beta (vs Ibov)"] = beta_no_reinvest
-
-
-            output = []
-            output.append("\n=== PERFORMANCE METRICS ===\n")
-            output.append(f"{'Metric':<25} | {'With Reinvest':<15} | {'No Reinvest':<15}")
-            output.append("-" * 65)
-
-
-            for k in m_reinvest.keys():
-                val_r = m_reinvest[k]
-                val_nr = m_no_reinvest[k]
-
-
-                if k in ["Total Return", "CAGR", "Volatility", "Max Drawdown"]:
-                    fmt_r = f"{val_r*100:.2f}%"
-                    fmt_nr = f"{val_nr*100:.2f}%"
-                else:
-                    fmt_r = f"{val_r:.2f}"
-                    fmt_nr = f"{val_nr:.2f}"
-                output.append(f"{k:<25} | {fmt_r:<15} | {fmt_nr:<15}")
-
-
-            output.append("\n\n=== FINAL PORTFOLIO VALUES (BRL) ===")
-            final = bt.results.iloc[-1]
-            for k, v in final.items():
-                output.append(f"{k:<25}: R$ {v:,.2f}")
-
-
-            report = "\n".join(output)
-
-
-            self.after(0, lambda: self._show_bt_results(report, bt))
-
+            self.after(0, lambda: self._update_backtest_ui(results))
 
         except Exception as e:
-            self.after(0, lambda: self._bt_error(str(e)))
+            mensagem_erro = str(e)
+            self.after(0, lambda: messagebox.showerror("Erro no Backtest", str(e)))
+        finally:
+            self.is_processing = False
+            self.after(0, lambda: self.btn_run_bt.config(state='normal'))
+    def _update_backtest_ui(self, results):
+        self.btn_run_bt.config(state='normal')
+        self.is_processing = False
 
+        if 'performance' not in results:
+            messagebox.showerror("Erro", "Dados de performance ausentes nos resultados.")
+            return
+
+        for i in self.bt_tree.get_children(): 
+            self.bt_tree.delete(i)
+        
+        perf = results['performance']
+        stats = results.get('stats', {})
+        
+        final_with = perf['with_reinvest'].iloc[-1]
+        final_no = perf['no_reinvest'].iloc[-1]
+        final_ibov = perf['ibov'].iloc[-1]
+        final_cdi = perf['cdi'].iloc[-1]
+        final_inv = perf['invested_capital'].iloc[-1]
+
+        retorno_total = ((final_with / final_inv) - 1) * 100 if final_inv > 0 else 0
+
+        metrics = [
+            ("Retorno Total", f"{retorno_total:.2f}%", "No período inteiro"),
+            ("CAGR", f"{stats.get('cagr', 0):.2f}%", "Retorno Anual Composto"),
+            ("Volatilidade", f"{stats.get('volatility', 0):.2f}%", "Risco Anualizado"),
+            ("Max Drawdown", f"{stats.get('max_drawdown', 0):.2f}%", "Maior Queda Histórica"),
+            ("Beta vs IBOV", f"{stats.get('beta', 0):.2f}", "Sensibilidade ao Mercado"),
+            ("---", "---", "---"),
+            ("Final: Com Reinvest.", f"R$ {final_with:,.2f}", "Estratégia Principal"),
+            ("Final: Sem Reinvest.", f"R$ {final_no:,.2f}", "Dividendos no Caixa"),
+            ("Final: IBOVESPA", f"R$ {final_ibov:,.2f}", "Somente Índice"),
+            ("Final: CDI", f"R$ {final_cdi:,.2f}", "Renda Fixa Risk Free"),
+            ("Total Investido", f"R$ {final_inv:,.2f}", "Soma dos Aportes")
+        ]
+        
+        for m in metrics:
+            self.bt_tree.insert("", "end", values=m)
+
+        self.ax_bt.clear()
+        
+        self.ax_bt.plot(perf.index, perf['with_reinvest'], label="Com Reinvestimento", color='#00ff00', linewidth=2)
+        self.ax_bt.plot(perf.index, perf['no_reinvest'], label="Sem Reinvestimento", color='#00bbff', linewidth=1.5)
+        self.ax_bt.plot(perf.index, perf['ibov'], label="Somente IBOV", color='#ffffff', alpha=0.5)
+        self.ax_bt.plot(perf.index, perf['cdi'], label="Somente CDI", color='#ffcc00', linestyle='--')
+        self.ax_bt.plot(perf.index, perf['invested_capital'], label="Total Investido", color='#888888', linestyle=':')
+        
+        self.ax_bt.set_title("Evolução Patrimonial: Comparativo de Estratégias")
+        self.ax_bt.yaxis.set_major_formatter(mtick.FuncFormatter(lambda x, p: f'R${x:,.0f}'))
+        self.ax_bt.legend(fontsize='small', loc='upper left')
+        self.ax_bt.grid(True, alpha=0.2)
+        self.canvas_bt.draw()
+
+        for i in self.div_tree.get_children(): 
+            self.div_tree.delete(i)
+            
+        div_matrix = results.get('div_matrix')
+        
+        if div_matrix is not None and not div_matrix.empty:
+            cols = ["Ano", "Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez", "Total"]
+            self.div_tree["columns"] = cols
+            
+            for c in cols:
+                self.div_tree.heading(c, text=c)
+                self.div_tree.column(c, width=65, anchor='center')
+
+            for year, row in div_matrix.iterrows():
+                row_data = [str(int(year))]
+                y_total = 0
+                for m in range(1, 13):
+                    val = row.get(m, 0.0)
+                    if pd.isna(val): val = 0.0
+                    
+                    row_data.append(f"R$ {val:,.2f}" if val > 0 else "-")
+                    y_total += val
+                    
+                row_data.append(f"R$ {y_total:,.2f}")
+                self.div_tree.insert("", "end", values=row_data)
+            
+    def run_backtest_thread(self):
+        if self.is_processing:
+            messagebox.showwarning("Aviso", "Aguarde o término do processo atual.")
+            return
+
+        tickers_raw = self.bt_tickers_entry.get().replace(',', ' ')
+        tickers = []
+        for t in tickers_raw.split():
+            t = t.strip().upper()
+            if t and not any(ext in t for ext in ['.SA', '.X', '^']):
+                tickers.append(f"{t}.SA")
+            elif t:
+                tickers.append(t)
+        
+        start_date = self.bt_start_entry.get()
+        end_date = datetime.now().strftime('%Y-%m-%d')
+
+        try:
+            initial_investment = float(self.bt_initial_entry.get())
+            monthly_investment = float(self.bt_monthly_entry.get())
+            rf_allocation = float(self.bt_rf_alloc_entry.get()) / 100.0
+        except ValueError:
+            messagebox.showerror("Erro", "Valores de investimento e alocação devem ser números.")
+            return
+
+        self.btn_run_bt.config(state='disabled')
+        self.is_processing = True
+        self.progress_var.set(10)
+        
+        self._run_in_thread(self._process_backtest, args=(tickers, start_date, end_date, initial_investment, monthly_investment, rf_allocation))
 
     def _show_bt_results(self, report, bt_obj):
         self.bt_text_output.delete("1.0", tk.END)
         self.bt_text_output.insert(tk.END, report)
         self.btn_run_bt.config(state='normal')
-
-
-        for widget in self.bt_chart_frame.winfo_children():
-            widget.destroy()
-
+        self._clear_frame(self.bt_chart_frame)
 
         fig = Figure(figsize=(5, 4), dpi=100)
         ax = fig.add_subplot(111)
-
-
         results = bt_obj.results
         ax.plot(results.index, results['With Reinvestment'], label='With Divs')
         ax.plot(results.index, results['Without Reinvestment'], label='No Reinvest')
@@ -385,139 +495,102 @@ class FinancialDashboardArgs(tk.Tk):
              ax.plot(results.index, results['Ibovespa'], label='Ibovespa', linestyle='-', color='gray', alpha=0.6)
         ax.plot(results.index, results['Risk Free'], label='Risk Free', linestyle='--')
 
-
         ax.set_title('Portfolio Performance')
         ax.set_xlabel('Date')
         ax.set_ylabel('Value (BRL)')
         ax.legend()
         ax.grid(True)
-
-
-        def currency(x, pos):
-            return f'R$ {x:,.0f}'.replace(',', 'X').replace('.', ',').replace('X', '.')
-        ax.yaxis.set_major_formatter(mtick.FuncFormatter(currency))
-
-
+        ax.yaxis.set_major_formatter(mtick.FuncFormatter(lambda x, p: f'R$ {x:,.0f}'.replace(',', 'X').replace('.', ',').replace('X', '.')))
         fig.tight_layout()
 
-
-        self.canvas_widget = FigureCanvasTkAgg(fig, master=self.bt_chart_frame)
-        self.canvas_widget.draw()
-        self.canvas_widget.get_tk_widget().pack(fill='both', expand=True)
-
-
+        canvas = FigureCanvasTkAgg(fig, master=self.bt_chart_frame)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill='both', expand=True)
         self._populate_div_table(bt_obj)
 
-
     def _populate_div_table(self, bt_obj):
-
-
         self.div_tree.delete(*self.div_tree.get_children())
         self.div_tree["columns"] = []
-
-
-        if not bt_obj.daily_dividends:
-
-
-             return
-
+        if not bt_obj.daily_dividends: return
 
         df_divs = pd.DataFrame.from_dict(bt_obj.daily_dividends, orient='index', columns=['Dividend'])
         df_divs.index = pd.to_datetime(df_divs.index)
-        df_divs['Year'] = df_divs.index.year
-        df_divs['Month'] = df_divs.index.month
-
-
-        monthly_pivot = df_divs.pivot_table(index='Year', columns='Month', values='Dividend', aggfunc='sum').fillna(0)
-
-
+        monthly_pivot = df_divs.pivot_table(index=df_divs.index.year, columns=df_divs.index.month, values='Dividend', aggfunc='sum').fillna(0)
         monthly_pivot['Total'] = monthly_pivot.sum(axis=1)
-
-
-        month_map = {1: 'Jan', 2: 'Feb', 3: 'Mar', 4: 'Apr', 5: 'May', 6: 'Jun',
-                     7: 'Jul', 8: 'Aug', 9: 'Sep', 10: 'Oct', 11: 'Nov', 12: 'Dec'}
-
-
+        
         all_months = list(range(1, 13))
+        month_map = {1: 'Jan', 2: 'Feb', 3: 'Mar', 4: 'Apr', 5: 'May', 6: 'Jun', 7: 'Jul', 8: 'Aug', 9: 'Sep', 10: 'Oct', 11: 'Nov', 12: 'Dec'}
         monthly_pivot = monthly_pivot.reindex(columns=all_months + ['Total'], fill_value=0)
-
 
         col_names = ['Year'] + [month_map[m] for m in all_months] + ['Total']
         self.div_tree["columns"] = col_names
-
-
         for col in col_names:
             self.div_tree.heading(col, text=col)
             self.div_tree.column(col, width=60, anchor='e')
         self.div_tree.column("Year", width=60, anchor='center')
         self.div_tree.column("Total", width=80, anchor='e')
 
-
         for year, row in monthly_pivot.iterrows():
-            values = [year]
-            for m in all_months:
-                val = row[m]
-                values.append(f"{val:,.2f}")
-            values.append(f"{row['Total']:,.2f}")
-
-
+            values = [year] + [f"{row[m]:,.2f}" for m in all_months] + [f"{row['Total']:,.2f}"]
             self.div_tree.insert("", "end", values=values)
 
-
+    def update_plot(self, figure):
+        if hasattr(self, 'canvas_widget'):
+            self.canvas_widget.get_tk_widget().destroy()
+            self.is_processing = False
+            self.canvas_widget = FigureCanvasTkAgg(figure, master=self.plot_frame)
+            self.canvas_widget.draw()
+            self.canvas_widget.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+    
     def _bt_error(self, msg):
         self.bt_text_output.insert(tk.END, f"\nERROR: {msg}")
         messagebox.showerror("Backtest Error", msg)
         self.btn_run_bt.config(state='normal')
 
-
     def create_optimization_tab(self):
         self.tab_opt = ttk.Frame(self.notebook)
         self.notebook.add(self.tab_opt, text="Portfolio Optimization")
 
-
         input_frame = ttk.LabelFrame(self.tab_opt, text="Configuration", padding=10)
         input_frame.pack(fill='x', padx=10, pady=10)
-
 
         ttk.Label(input_frame, text="Tickers (comma sep):").grid(row=0, column=0, sticky='w', padx=5, pady=5)
         self.opt_tickers_entry = ttk.Entry(input_frame, width=50)
         self.opt_tickers_entry.grid(row=0, column=1, columnspan=2, sticky='w', padx=5, pady=5)
-        self.opt_tickers_entry.insert(0, "PETR4, UNIP6, CMIG4, BBAS3, BBSE3, ITUB4, CXSE3, SLCE3")
-
+        self.opt_tickers_entry.insert(0, "ABCB4, BBAS3, BBSE3, CMIG4, ITUB4, KLBN11, TIMS3, TAEE4")
 
         ttk.Label(input_frame, text="Start Date:").grid(row=1, column=0, sticky='w', padx=5, pady=5)
         self.opt_start_entry = ttk.Entry(input_frame, width=15)
         self.opt_start_entry.grid(row=1, column=1, sticky='w', padx=5, pady=5)
         self.opt_start_entry.insert(0, "2010-01-01")
 
-
-        self.btn_import_bt = ttk.Button(input_frame, text="Import from Backtest", command=self.import_tickers_from_bt)
-        self.btn_import_bt.grid(row=0, column=3, sticky='w', padx=5, pady=5)
-
-
+        ttk.Button(input_frame, text="Import from Backtest", command=self.import_tickers_from_bt).grid(row=0, column=3, sticky='w', padx=5, pady=5)
         self.btn_run_opt = ttk.Button(input_frame, text="Optimize Portfolio", command=self.run_optimization_thread)
         self.btn_run_opt.grid(row=1, column=3, sticky='e', padx=5, pady=5)
-
 
         self.opt_results_frame = ttk.LabelFrame(self.tab_opt, text="Results", padding=10)
         self.opt_results_frame.pack(fill='both', expand=True, padx=10, pady=10)
 
-
         self.opt_chart_notebook = ttk.Notebook(self.opt_results_frame)
         self.opt_chart_notebook.pack(side='left', fill='both', expand=True, padx=5)
 
-
         self.opt_frontier_tab = ttk.Frame(self.opt_chart_notebook)
-        self.opt_chart_notebook.add(self.opt_frontier_tab, text="Efficient Frontier")
-
-
         self.opt_perf_tab = ttk.Frame(self.opt_chart_notebook)
+        self.opt_chart_notebook.add(self.opt_frontier_tab, text="Efficient Frontier")
         self.opt_chart_notebook.add(self.opt_perf_tab, text="Historical Performance")
 
+        self.fig_opt = Figure(figsize=(6, 4), dpi=100)
+        self.ax_opt = self.fig_opt.add_subplot(111)
+        self.canvas_opt = FigureCanvasTkAgg(self.fig_opt, master=self.opt_frontier_tab)
+        self.canvas_opt.get_tk_widget().pack(fill='both', expand=True)
+
+        self.fig_opt_hist = Figure(figsize=(6, 4), dpi=100)
+        self.ax_opt_hist = self.fig_opt_hist.add_subplot(111)
+        self.canvas_opt_hist = FigureCanvasTkAgg(self.fig_opt_hist, master=self.opt_perf_tab)
+        self.canvas_opt_hist.get_tk_widget().pack(fill='both', expand=True)
 
         self.opt_weights_frame = ttk.Frame(self.opt_results_frame)
         self.opt_weights_frame.pack(side='right', fill='y', padx=5)
-
 
         columns = ("Stock", "Max Sharpe", "Min Vol", "Optimal")
         self.opt_tree = ttk.Treeview(self.opt_weights_frame, columns=columns, show='headings', height=15)
@@ -526,475 +599,312 @@ class FinancialDashboardArgs(tk.Tk):
             self.opt_tree.column(col, width=90, anchor='center')
         self.opt_tree.pack(fill='both', expand=True)
 
-
     def import_tickers_from_bt(self):
-        bt_text = self.bt_tickers_entry.get()
         self.opt_tickers_entry.delete(0, tk.END)
-        self.opt_tickers_entry.insert(0, bt_text)
-
+        self.opt_tickers_entry.insert(0, self.bt_tickers_entry.get())
 
     def run_optimization_thread(self):
-        tickers_str = self.opt_tickers_entry.get()
-        start_date = self.opt_start_entry.get()
-
-
-        if not tickers_str or not start_date:
-            messagebox.showwarning("Input Error", "Please fill all fields.")
+        if self.is_processing:
+            messagebox.showwarning("Aviso", "Aguarde o término do processo atual.")
             return
 
-
-        raw_tickers = [t.strip().upper() for t in tickers_str.split(',') if t.strip()]
+        tickers_raw = self.opt_tickers_entry.get().replace(',', ' ')
         tickers = []
-        for t in raw_tickers:
-           tickers.append(t if ('.' in t or '=' in t) else f"{t}.SA")
+        for t in tickers_raw.split():
+            t = t.strip().upper()
+            if t and not any(ext in t for ext in ['.SA', '.X', '^']):
+                tickers.append(f"{t}.SA")
+            elif t:
+                tickers.append(t)
 
+        start_date = self.opt_start_entry.get()
+        end_date = datetime.now().strftime('%Y-%m-%d')
+
+        if not tickers or not start_date:
+            messagebox.showwarning("Aviso", "Preencha Tickers e Data de Início.")
+            return
 
         self.btn_run_opt.config(state='disabled')
-        self.opt_tree.delete(*self.opt_tree.get_children())
+        self.is_processing = True
+        
+        self._run_in_thread(self._process_optimization, args=(tickers, start_date, end_date))
 
-
-        for widget in self.opt_frontier_tab.winfo_children(): widget.destroy()
-        for widget in self.opt_perf_tab.winfo_children(): widget.destroy()
-
-
-        lbl = ttk.Label(self.opt_frontier_tab, text="Optimizing... This may take a moment.")
-        lbl.pack(pady=20)
-
-
-        t = threading.Thread(target=self._process_optimization, args=(tickers, start_date))
-        t.start()
-
-
-    def _process_optimization(self, tickers, start_date):
+    def _process_optimization(self, tickers, start_date, end_date):
         try:
-            opt = optimization_tool.PortfolioOptimizer(tickers, start_date)
+            self.is_processing = True
+            data = get_cached_data(tickers, start_date, end_date)
+            
+            if data is None or data.empty:
+                raise ValueError("Falha ao obter dados para otimização.")
 
-
-            sim_results, max_sharpe, min_vol, optimal = opt.optimize(num_portfolios=5000)
-
-
-            self.after(0, lambda: self._show_optimization_results(sim_results, max_sharpe, min_vol, optimal))
-
+            opt = optimization_tool.PortfolioOptimizer(
+                tickers=tickers,
+                start_date=start_date,
+                end_date=end_date,
+                price_data=data
+            )
+            
+            results = opt.optimize()
+            self.after(0, lambda: self._update_optimization_ui(results))
 
         except Exception as e:
-            self.after(0, lambda: messagebox.showerror("Optimization Error", str(e)))
+            self.after(0, lambda: messagebox.showerror("Erro na Otimização", str(e)))
+        finally:
+            self.is_processing = False
             self.after(0, lambda: self.btn_run_opt.config(state='normal'))
 
+    def _update_optimization_ui(self, results):
+        from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+        
+        self.btn_run_opt.config(state='normal')
+        self.is_processing = False
 
+        if not results or len(results) != 4:
+            messagebox.showerror("Erro", "Resultados da otimização não estão no formato esperado.")
+            return
+
+        p_results, max_sharpe, min_vol, optimal = results
+
+        results_frame = None
+        for child in self.tab_opt.winfo_children():
+            if isinstance(child, ttk.LabelFrame) and "Configuration" not in child.cget("text"):
+                results_frame = child
+                break
+                
+        if not results_frame:
+            results_frame = self.tab_opt.winfo_children()[-1]
+
+        if not hasattr(self, '_opt_layout_built'):
+            for widget in results_frame.winfo_children():
+                widget.destroy()
+
+            self.opt_tree = ttk.Treeview(results_frame, show='headings')
+            self.opt_tree.pack(side='left', fill='y', padx=5, pady=5)
+
+            self.opt_notebook = ttk.Notebook(results_frame)
+            self.opt_notebook.pack(side='right', fill='both', expand=True, padx=5, pady=5)
+
+            self.tab_front = ttk.Frame(self.opt_notebook)
+            self.opt_notebook.add(self.tab_front, text="Fronteira Eficiente")
+            self.fig_front = Figure(figsize=(5, 4), dpi=100)
+            self.fig_front.patch.set_facecolor('#121212')
+            self.ax_front = self.fig_front.add_subplot(111)
+            self.canvas_front = FigureCanvasTkAgg(self.fig_front, master=self.tab_front)
+            self.canvas_front.get_tk_widget().pack(fill='both', expand=True)
+
+            self.tab_hist = ttk.Frame(self.opt_notebook)
+            self.opt_notebook.add(self.tab_hist, text="Crescimento Histórico")
+            self.fig_hist = Figure(figsize=(5, 4), dpi=100)
+            self.fig_hist.patch.set_facecolor('#121212')
+            self.ax_hist = self.fig_hist.add_subplot(111)
+            self.canvas_hist = FigureCanvasTkAgg(self.fig_hist, master=self.tab_hist)
+            self.canvas_hist.get_tk_widget().pack(fill='both', expand=True)
+
+            self._opt_layout_built = True
+
+        for i in self.opt_tree.get_children(): 
+            self.opt_tree.delete(i)
+
+        self.opt_tree["columns"] = ("Ativo_Metrica", "Max_Sharpe", "Min_Vol", "Optimal")
+        self.opt_tree.heading("Ativo_Metrica", text="Ativo / Métrica")
+        self.opt_tree.heading("Max_Sharpe", text="Max Sharpe")
+        self.opt_tree.heading("Min_Vol", text="Min Vol")
+        self.opt_tree.heading("Optimal", text="Optimal")
+        self.opt_tree.column("Ativo_Metrica", width=120, anchor='w')
+        self.opt_tree.column("Max_Sharpe", width=90, anchor='center')
+        self.opt_tree.column("Min_Vol", width=90, anchor='center')
+        self.opt_tree.column("Optimal", width=90, anchor='center')
+
+        tickers = list(max_sharpe['Weights'].keys())
+        self.opt_tree.insert("", "end", values=("--- PESOS DOS ATIVOS ---", "---", "---", "---"))
+        for t in tickers:
+            w_ms = max_sharpe['Weights'].get(t, 0) * 100
+            w_mv = min_vol['Weights'].get(t, 0) * 100
+            w_op = optimal['Weights'].get(t, 0) * 100
+            self.opt_tree.insert("", "end", values=(t, f"{w_ms:.1f}%", f"{w_mv:.1f}%", f"{w_op:.1f}%"))
+
+        self.opt_tree.insert("", "end", values=("", "", "", ""))
+        self.opt_tree.insert("", "end", values=("--- PERFORMANCE ---", "---", "---", "---"))
+        self.opt_tree.insert("", "end", values=("Retorno Esperado", f"{max_sharpe['Return']*100:.2f}%", f"{min_vol['Return']*100:.2f}%", f"{optimal['Return']*100:.2f}%"))
+        self.opt_tree.insert("", "end", values=("Volatilidade", f"{max_sharpe['Volatility']*100:.2f}%", f"{min_vol['Volatility']*100:.2f}%", f"{optimal['Volatility']*100:.2f}%"))
+        self.opt_tree.insert("", "end", values=("Sharpe Ratio", f"{max_sharpe['Sharpe']:.2f}", f"{min_vol['Sharpe']:.2f}", f"{optimal['Sharpe']:.2f}"))
+        self.opt_tree.insert("", "end", values=("Max Drawdown", f"{max_sharpe.get('MaxDrawdown', 0)*100:.2f}%", f"{min_vol.get('MaxDrawdown', 0)*100:.2f}%", f"{optimal.get('MaxDrawdown', 0)*100:.2f}%"))
+
+        self.ax_front.clear()
+        self.ax_front.set_facecolor('#121212')
+        self.ax_front.scatter(p_results[1], p_results[0], c=p_results[2], cmap='viridis', marker='o', s=10, alpha=0.4)
+        self.ax_front.scatter(max_sharpe['Volatility'], max_sharpe['Return'], color='red', marker='*', s=150, label='Max Sharpe', edgecolors='white')
+        self.ax_front.scatter(min_vol['Volatility'], min_vol['Return'], color='blue', marker='*', s=150, label='Min Volatility', edgecolors='white')
+        self.ax_front.scatter(optimal['Volatility'], optimal['Return'], color='white', marker='*', s=150, label='Optimal', edgecolors='white')
+        self.ax_front.set_title("Fronteira Eficiente")
+        self.ax_front.set_xlabel("Risco (Volatilidade)")
+        self.ax_front.set_ylabel("Retorno Esperado")
+        self.ax_front.xaxis.set_major_formatter(mtick.PercentFormatter(1.0))
+        self.ax_front.yaxis.set_major_formatter(mtick.PercentFormatter(1.0))
+        self.ax_front.legend(fontsize='small')
+        self.canvas_front.draw()
+
+        self.ax_hist.clear()
+        self.ax_hist.set_facecolor('#121212')
+        curve_ms = max_sharpe.get('EquityCurve')
+        curve_mv = min_vol.get('EquityCurve')
+        curve_op = optimal.get('EquityCurve')
+        
+        if curve_ms is not None and not curve_ms.empty:
+            self.ax_hist.plot(curve_ms.index, curve_ms.values, label="Max Sharpe", color='red', linewidth=1.5)
+            self.ax_hist.plot(curve_mv.index, curve_mv.values, label="Min Volatilidade", color='blue', linewidth=1.5)
+            self.ax_hist.plot(curve_op.index, curve_op.values, label="Optimal", color='white', linewidth=2.5)
+            self.ax_hist.set_title("Crescimento Histórico (Base 100)")
+            self.ax_hist.yaxis.set_major_formatter(mtick.FuncFormatter(lambda x, p: f'{x:,.0f}'))
+            self.ax_hist.legend(fontsize='small')
+            self.ax_hist.grid(True, alpha=0.2)
+        else:
+            self.ax_hist.set_title("Histórico Indisponível")
+            
+        self.canvas_hist.draw()
+        
     def _show_optimization_results(self, sim_results, max_sharpe, min_vol, optimal):
         self.btn_run_opt.config(state='normal')
-
-
         self.opt_tree.delete(*self.opt_tree.get_children())
-        tickers = max_sharpe['Weights'].keys()
-
-
-        for t in tickers:
-            w_sharpe = max_sharpe['Weights'].get(t, 0)
-            w_vol = min_vol['Weights'].get(t, 0)
-            w_opt = optimal['Weights'].get(t, 0)
-            self.opt_tree.insert("", "end", values=(t, f"{w_sharpe:.2%}", f"{w_vol:.2%}", f"{w_opt:.2%}"))
-
+        for t in max_sharpe['Weights'].keys():
+            self.opt_tree.insert("", "end", values=(t, f"{max_sharpe['Weights'].get(t, 0):.2%}", f"{min_vol['Weights'].get(t, 0):.2%}", f"{optimal['Weights'].get(t, 0):.2%}"))
 
         self.opt_tree.insert("", "end", values=("---", "---", "---", "---"))
-        self.opt_tree.insert("", "end", values=("Return", f"{max_sharpe['Return']:.2%}", f"{min_vol['Return']:.2%}", f"{optimal['Return']:.2%}"))
-        self.opt_tree.insert("", "end", values=("Volatility", f"{max_sharpe['Volatility']:.2%}", f"{min_vol['Volatility']:.2%}", f"{optimal['Volatility']:.2%}"))
-        self.opt_tree.insert("", "end", values=("Sharpe", f"{max_sharpe['Sharpe']:.2f}", f"{min_vol['Sharpe']:.2f}", f"{optimal['Sharpe']:.2f}"))
-        self.opt_tree.insert("", "end", values=("Max Drawdown", f"{max_sharpe['MaxDrawdown']:.2%}", f"{min_vol['MaxDrawdown']:.2%}", f"{optimal['MaxDrawdown']:.2%}"))
+        for k, fmt in [('Return', '.2%'), ('Volatility', '.2%'), ('Sharpe', '.2f'), ('Max Drawdown', '.2%')]:
+            self.opt_tree.insert("", "end", values=(k, f"{max_sharpe[k.replace(' ', '')]:{fmt}}", f"{min_vol[k.replace(' ', '')]:{fmt}}", f"{optimal[k.replace(' ', '')]:{fmt}}"))
 
-
-        for widget in self.opt_frontier_tab.winfo_children(): widget.destroy()
-
-
+        self._clear_frame(self.opt_frontier_tab)
         fig = Figure(figsize=(5, 4), dpi=100)
         ax = fig.add_subplot(111)
-
-
         sc = ax.scatter(sim_results[1,:], sim_results[0,:], c=sim_results[2,:], cmap='viridis', s=2, alpha=0.5)
         fig.colorbar(sc, ax=ax, label='Sharpe Ratio')
-
-
         ax.scatter(max_sharpe['Volatility'], max_sharpe['Return'], c='red', marker='*', s=150, label='Max Sharpe')
         ax.scatter(min_vol['Volatility'], min_vol['Return'], c='blue', marker='*', s=150, label='Min Volatility')
-        ax.scatter(optimal['Volatility'], optimal['Return'], c='green', marker='*', s=150, label='Optimal (Best Combo)')
-
-
-        ax.set_title("Efficient Frontier")
-        ax.set_xlabel("Annual Volatility")
-        ax.set_ylabel("Annual Return")
-        ax.legend()
-        ax.grid(True, alpha=0.3)
-
-
+        ax.scatter(optimal['Volatility'], optimal['Return'], c='green', marker='*', s=150, label='Optimal')
+        ax.set_title("Efficient Frontier"); ax.set_xlabel("Annual Volatility"); ax.set_ylabel("Annual Return"); ax.legend(); ax.grid(True, alpha=0.3)
         fig.tight_layout()
+        FigureCanvasTkAgg(fig, master=self.opt_frontier_tab).get_tk_widget().pack(fill='both', expand=True)
 
-
-        canvas = FigureCanvasTkAgg(fig, master=self.opt_frontier_tab)
-        canvas.draw()
-        canvas.get_tk_widget().pack(fill='both', expand=True)
-
-
-        for widget in self.opt_perf_tab.winfo_children(): widget.destroy()
-
-
-        fig2 = Figure(figsize=(5, 4), dpi=100)
-        ax2 = fig2.add_subplot(111)
-
-
+        self._clear_frame(self.opt_perf_tab)
+        fig2 = Figure(figsize=(5, 4), dpi=100); ax2 = fig2.add_subplot(111)
         if 'EquityCurve' in max_sharpe:
-            ax2.plot(max_sharpe['EquityCurve'].index, max_sharpe['EquityCurve'], label='Max Sharpe', color='red')
-            ax2.plot(min_vol['EquityCurve'].index, min_vol['EquityCurve'], label='Min Volatility', color='blue')
-            ax2.plot(optimal['EquityCurve'].index, optimal['EquityCurve'], label='Optimal', color='green')
-
-
-        ax2.set_title("Historical Performance (Base 100)")
-        ax2.set_ylabel("Portfolio Value")
-        ax2.legend()
-        ax2.grid(True)
-
-
+            for label, data, color in [('Max Sharpe', max_sharpe, 'red'), ('Min Volatility', min_vol, 'blue'), ('Optimal', optimal, 'green')]:
+                ax2.plot(data['EquityCurve'].index, data['EquityCurve'], label=label, color=color)
+        ax2.set_title("Historical Performance (Base 100)"); ax2.set_ylabel("Portfolio Value"); ax2.legend(); ax2.grid(True)
         fig2.tight_layout()
-
-
-        canvas2 = FigureCanvasTkAgg(fig2, master=self.opt_perf_tab)
-        canvas2.draw()
-        canvas2.get_tk_widget().pack(fill='both', expand=True)
-
-
-        canvas2.get_tk_widget().pack(fill='both', expand=True)
-
+        FigureCanvasTkAgg(fig2, master=self.opt_perf_tab).get_tk_widget().pack(fill='both', expand=True)
 
     def create_breadth_tab(self):
         self.tab_breadth = ttk.Frame(self.notebook)
         self.notebook.add(self.tab_breadth, text="Market Breadth (Ibovespa)")
-
-
         ctrl_frame = ttk.LabelFrame(self.tab_breadth, text="Controls", padding=10)
         ctrl_frame.pack(fill='x', padx=10, pady=10)
-
-
         ttk.Label(ctrl_frame, text="Analyze stocks above Moving Averages (Fear & Greed Proxy)").pack(side='left', padx=10)
-
-
         self.var_full_market = tk.BooleanVar(value=False)
-        self.chk_full = ttk.Checkbutton(ctrl_frame, text="Scan Full B3 Market (Slower)", variable=self.var_full_market)
-        self.chk_full.pack(side='left', padx=10)
-
-
+        ttk.Checkbutton(ctrl_frame, text="Scan Full B3 Market (Slower)", variable=self.var_full_market).pack(side='left', padx=10)
         self.btn_run_breadth = ttk.Button(ctrl_frame, text="Run Analysis", command=self.run_breadth_thread)
         self.btn_run_breadth.pack(side='right', padx=10)
-
-
-        self.breadth_results_frame = ttk.Frame(self.tab_breadth)
-        self.breadth_results_frame.pack(fill='both', expand=True, padx=10, pady=10)
-
-
-        self.breadth_chart_frame = ttk.LabelFrame(self.breadth_results_frame, text="Breadth Chart")
-        self.breadth_chart_frame.pack(side='left', fill='both', expand=True, padx=5)
-
-
-        self.breadth_info_frame = ttk.LabelFrame(self.breadth_results_frame, text="Interpretation", width=300)
-        self.breadth_info_frame.pack(side='right', fill='y', padx=5)
-
-
-        self.breadth_text = tk.Text(self.breadth_info_frame, width=40, height=20, wrap='word')
+        
+        results_frame = ttk.Frame(self.tab_breadth); results_frame.pack(fill='both', expand=True, padx=10, pady=10)
+        self.breadth_chart_frame = ttk.LabelFrame(results_frame, text="Breadth Chart"); self.breadth_chart_frame.pack(side='left', fill='both', expand=True, padx=5)
+        info_frame = ttk.LabelFrame(results_frame, text="Interpretation", width=300); info_frame.pack(side='right', fill='y', padx=5)
+        self.breadth_text = tk.Text(info_frame, width=40, height=20, wrap='word', 
+                                   bg="#333333", fg="#ffffff", insertbackground="white",
+                                   borderwidth=0, relief="flat", font=("Segoe UI", 10), padx=5, pady=5)
         self.breadth_text.pack(fill='both', expand=True, padx=5, pady=5)
-        self.breadth_text.insert(tk.END, "Click 'Run Analysis' to see data.\n\n")
-        self.breadth_text.insert(tk.END, "Interpretation:\n")
-        self.breadth_text.insert(tk.END, "- > 80% Above MA200: Extreme Greed (Risk of correction)\n")
-        self.breadth_text.insert(tk.END, "- < 20% Above MA200: Extreme Fear (Potential bottom)\n")
-
+        self.breadth_text.insert(tk.END, "Click 'Run Analysis' to see data.\n\nInterpretation:\n- > 80% Above MA200: Extreme Greed\n- < 20% Above MA200: Extreme Fear\n")
 
     def run_breadth_thread(self):
         self.btn_run_breadth.config(state='disabled')
-        mode_text = "Full Market (Scraping Fundamentus...)" if self.var_full_market.get() else "~56 Ibovespa stocks"
-        self.breadth_text.delete("1.0", tk.END)
-        self.breadth_text.insert(tk.END, f"Fetching data for {mode_text}...\nThis may take a minute...")
-
-
-        for widget in self.breadth_chart_frame.winfo_children(): widget.destroy()
-
-
         mode = 'full' if self.var_full_market.get() else 'default'
-        t = threading.Thread(target=self._process_breadth, args=(mode,))
-        t.start()
-
+        mode_text = "Full Market" if mode == 'full' else "~56 Ibovespa stocks"
+        self.breadth_text.delete("1.0", tk.END); self.breadth_text.insert(tk.END, f"Fetching data for {mode_text}...")
+        self._clear_frame(self.breadth_chart_frame)
+        self._run_in_thread(self._process_breadth, args=(mode,))
 
     def _process_breadth(self, mode):
         try:
-            analyzer = market_breadth.BreadthAnalyzer(mode=mode)
-            metrics, details = analyzer.calculate_breadth()
-
-
+            metrics, _ = market_breadth.BreadthAnalyzer(mode=mode).calculate_breadth()
             self.after(0, lambda: self._show_breadth_results(metrics))
-
-
         except Exception as e:
             self.after(0, lambda: messagebox.showerror("Breadth Error", str(e)))
             self.after(0, lambda: self.btn_run_breadth.config(state='normal'))
 
-
     def _show_breadth_results(self, metrics):
         self.btn_run_breadth.config(state='normal')
-        if not metrics:
-            self.breadth_text.insert(tk.END, "\nNo data returned.")
-            return
-
-
-        self.breadth_text.delete("1.0", tk.END)
-        self.breadth_text.insert(tk.END, "=== Market Breadth ===\n\n")
-
-
-        for ma, pct in metrics.items():
-            self.breadth_text.insert(tk.END, f"{ma}: {pct:.1%} of stocks above average\n")
-
-
+        if not metrics: return
+        self.breadth_text.delete("1.0", tk.END); self.breadth_text.insert(tk.END, "=== Market Breadth ===\n\n")
+        for ma, pct in metrics.items(): self.breadth_text.insert(tk.END, f"{ma}: {pct:.1%} of stocks above average\n")
         pct200 = metrics.get('MA200', 0)
-        status = "Neutral"
-        if pct200 > 0.80: status = "EXTREME GREED"
-        elif pct200 > 0.60: status = "Greed"
-        elif pct200 < 0.20: status = "EXTREME FEAR"
-        elif pct200 < 0.40: status = "Fear"
-
-
+        status = "EXTREME GREED" if pct200 > 0.8 else "Greed" if pct200 > 0.6 else "EXTREME FEAR" if pct200 < 0.2 else "Fear" if pct200 < 0.4 else "Neutral"
         self.breadth_text.insert(tk.END, f"\nSentiment (MA200): {status}\n")
 
-
-        for widget in self.breadth_chart_frame.winfo_children(): widget.destroy()
-
-
-        fig = Figure(figsize=(5, 4), dpi=100)
-        ax = fig.add_subplot(111)
-
-
-        mas = list(metrics.keys())
-
-
+        self._clear_frame(self.breadth_chart_frame)
+        fig = Figure(figsize=(5, 4), dpi=100); ax = fig.add_subplot(111); mas = list(metrics.keys())
         vals = [metrics[k]*100 for k in mas]
-
-
-        colors = ['red' if '200' in m else 'skyblue' for m in mas]
-        bars = ax.bar(mas, vals, color=colors)
-
-
-        ax.set_ylim(0, 100)
-        ax.set_ylabel("% Stocks Above MA")
-        ax.set_title("Ibovespa Market Breadth")
-        ax.axhline(50, color='gray', linestyle='--', alpha=0.5)
-        ax.axhline(80, color='red', linestyle=':', alpha=0.5, label='Overbought')
-        ax.axhline(20, color='green', linestyle=':', alpha=0.5, label='Oversold')
-
-
-        for bar in bars:
-            height = bar.get_height()
-            ax.text(bar.get_x() + bar.get_width()/2., height,
-                    f'{height:.1f}%',
-                    ha='center', va='bottom')
-
-
+        bars = ax.bar(mas, vals, color=['red' if '200' in m else 'skyblue' for m in mas])
+        ax.set_ylim(0, 100); ax.set_ylabel("% Stocks Above MA"); ax.set_title("Ibovespa Market Breadth")
+        ax.axhline(50, color='gray', linestyle='--', alpha=0.5); ax.axhline(80, color='red', linestyle=':', alpha=0.5); ax.axhline(20, color='green', linestyle=':', alpha=0.5)
+        for bar in bars: ax.text(bar.get_x() + bar.get_width()/2., bar.get_height(), f'{bar.get_height():.1f}%', ha='center', va='bottom')
         fig.tight_layout()
-
-
-        canvas = FigureCanvasTkAgg(fig, master=self.breadth_chart_frame)
-        canvas.draw()
-        canvas.get_tk_widget().pack(fill='both', expand=True)
-
+        FigureCanvasTkAgg(fig, master=self.breadth_chart_frame).get_tk_widget().pack(fill='both', expand=True)
 
     def create_rrg_tab(self):
-        self.tab_rrg = ttk.Frame(self.notebook)
-        self.notebook.add(self.tab_rrg, text="RRG Analysis")
-
-
-        input_frame = ttk.LabelFrame(self.tab_rrg, text="Configuration", padding=10)
-        input_frame.pack(fill='x', padx=10, pady=10)
-
-
+        self.tab_rrg = ttk.Frame(self.notebook); self.notebook.add(self.tab_rrg, text="RRG Analysis")
+        input_frame = ttk.LabelFrame(self.tab_rrg, text="Configuration", padding=10); input_frame.pack(fill='x', padx=10, pady=10)
         ttk.Label(input_frame, text="Tickers (comma sep):").grid(row=0, column=0, sticky='w', padx=5, pady=5)
-        self.rrg_tickers_entry = ttk.Entry(input_frame, width=50)
-        self.rrg_tickers_entry.grid(row=0, column=1, columnspan=2, sticky='w', padx=5, pady=5)
+        self.rrg_tickers_entry = ttk.Entry(input_frame, width=50); self.rrg_tickers_entry.grid(row=0, column=1, columnspan=2, sticky='w', padx=5, pady=5)
         self.rrg_tickers_entry.insert(0, "VALE3, PETR4, ITUB4, BBDC4, AXIA3, BBAS3, BPAC11")
-
-
-        self.btn_import_bt_rrg = ttk.Button(input_frame, text="Import from Backtest", command=self.import_tickers_from_bt_to_rrg)
-        self.btn_import_bt_rrg.grid(row=0, column=3, sticky='w', padx=5, pady=5)
-
-
+        ttk.Button(input_frame, text="Import from Backtest", command=self.import_tickers_from_bt_to_rrg).grid(row=0, column=3, sticky='w', padx=5, pady=5)
         ttk.Label(input_frame, text="Benchmark:").grid(row=0, column=4, sticky='w', padx=5, pady=5)
-        self.rrg_bench_entry = ttk.Entry(input_frame, width=15)
-        self.rrg_bench_entry.grid(row=0, column=5, sticky='w', padx=5, pady=5)
-        self.rrg_bench_entry.insert(0, "^BVSP")
-
-
+        self.rrg_bench_entry = ttk.Entry(input_frame, width=15); self.rrg_bench_entry.grid(row=0, column=5, sticky='w', padx=5, pady=5); self.rrg_bench_entry.insert(0, "^BVSP")
         ttk.Label(input_frame, text="Window (Days):").grid(row=1, column=0, sticky='w', padx=5, pady=5)
-        self.rrg_window_entry = ttk.Entry(input_frame, width=10)
-        self.rrg_window_entry.grid(row=1, column=1, sticky='w', padx=5, pady=5)
-        self.rrg_window_entry.insert(0, "60")
-
-
+        self.rrg_window_entry = ttk.Entry(input_frame, width=10); self.rrg_window_entry.grid(row=1, column=1, sticky='w', padx=5, pady=5); self.rrg_window_entry.insert(0, "60")
         ttk.Label(input_frame, text="Trail Length:").grid(row=1, column=2, sticky='w', padx=5, pady=5)
-        self.rrg_trail_entry = ttk.Entry(input_frame, width=10)
-        self.rrg_trail_entry.grid(row=1, column=3, sticky='w', padx=5, pady=5)
-        self.rrg_trail_entry.insert(0, "10")
-
-
-        self.btn_run_rrg = ttk.Button(input_frame, text="Run RRG", command=self.run_rrg_thread)
-        self.btn_run_rrg.grid(row=1, column=5, sticky='e', padx=5, pady=5)
-
-
-        self.rrg_chart_frame = ttk.LabelFrame(self.tab_rrg, text="Relative Rotation Graph", padding=10)
-        self.rrg_chart_frame.pack(fill='both', expand=True, padx=10, pady=10)
-
-
-        self.rrg_status_label = ttk.Label(self.rrg_chart_frame, text="Click 'Run RRG' to start (this requires downloading data).")
-        self.rrg_status_label.pack(pady=5)
-
+        self.rrg_trail_entry = ttk.Entry(input_frame, width=10); self.rrg_trail_entry.grid(row=1, column=3, sticky='w', padx=5, pady=5); self.rrg_trail_entry.insert(0, "10")
+        ttk.Button(input_frame, text="Run RRG", command=self.run_rrg_thread).grid(row=1, column=5, sticky='e', padx=5, pady=5)
+        self.rrg_chart_frame = ttk.LabelFrame(self.tab_rrg, text="Relative Rotation Graph", padding=10); self.rrg_chart_frame.pack(fill='both', expand=True, padx=10, pady=10)
+        self.rrg_status_label = ttk.Label(self.rrg_chart_frame, text="Click 'Run RRG' to start."); self.rrg_status_label.pack(pady=5)
 
     def import_tickers_from_bt_to_rrg(self):
-        bt_text = self.bt_tickers_entry.get()
-        self.rrg_tickers_entry.delete(0, tk.END)
-        self.rrg_tickers_entry.insert(0, bt_text)
-
+        self.rrg_tickers_entry.delete(0, tk.END); self.rrg_tickers_entry.insert(0, self.bt_tickers_entry.get())
 
     def run_rrg_thread(self):
-        tickers_str = self.rrg_tickers_entry.get()
+        tickers = self._format_tickers(self.rrg_tickers_entry.get())
         bench = self.rrg_bench_entry.get().strip().upper()
-
-
-        if not tickers_str or not bench:
-             messagebox.showwarning("Input Error", "Please provide tickers and benchmark.")
-             return
-
-
+        if not (tickers and bench): messagebox.showwarning("Input Error", "Please provide tickers and benchmark."); return
         try:
-             window = int(self.rrg_window_entry.get())
-             trail = int(self.rrg_trail_entry.get())
-        except ValueError:
-             messagebox.showerror("Input Error", "Window and Trail must be integers.")
-             return
-
-
-        raw_tickers = [t.strip().upper() for t in tickers_str.split(',') if t.strip()]
-
-
-        tickers = []
-        for t in raw_tickers:
-            tickers.append(t if ('.' in t or '=' in t) else f"{t}.SA")
-
-
-        self.btn_run_rrg.config(state='disabled')
-        self.rrg_status_label.config(text="Fetching data and calculating... Please wait.")
-
-
-        for widget in self.rrg_chart_frame.winfo_children():
-            if widget != self.rrg_status_label: widget.destroy()
-
-
-        t = threading.Thread(target=self._process_rrg, args=(tickers, bench, window, trail))
-        t.start()
-
+             window, trail = int(self.rrg_window_entry.get()), int(self.rrg_trail_entry.get())
+        except ValueError: messagebox.showerror("Input Error", "Window and Trail must be integers."); return
+        self.btn_run_rrg = self.btn_run_rrg if hasattr(self, 'btn_run_rrg') else None # Safeguard
+        self.rrg_status_label.config(text="Fetching data and calculating..."); self._clear_frame(self.rrg_chart_frame, exclude=self.rrg_status_label)
+        self._run_in_thread(self._process_rrg, args=(tickers, bench, window, trail))
 
     def _process_rrg(self, tickers, bench, window, trail):
         try:
-
-
-            start_date = "2023-01-01"
-
-
-            rrg = rrg_tool.RRGCalculator(tickers, bench, start_date, window)
-            rrg.calculate()
-
-
-            trails_data = rrg.get_trails(trail)
-            latest_data = rrg.get_latest_values()
-
-
-            self.after(0, lambda: self._show_rrg_results(trails_data, latest_data))
-
-
+            rrg = rrg_tool.RRGCalculator(tickers, bench, "2023-01-01", window); rrg.calculate()
+            self.after(0, lambda: self._show_rrg_results(rrg.get_trails(trail), rrg.get_latest_values()))
         except Exception as e:
             self.after(0, lambda: messagebox.showerror("RRG Error", str(e)))
-            self.after(0, lambda: self.btn_run_rrg.config(state='normal'))
             self.after(0, lambda: self.rrg_status_label.config(text="Error occurred."))
 
-
     def _show_rrg_results(self, trails, latest):
-        self.btn_run_rrg.config(state='normal')
         self.rrg_status_label.config(text=f"RRG Generated. {len(latest)} assets.")
-
-
-        for widget in self.rrg_chart_frame.winfo_children():
-            if widget != self.rrg_status_label: widget.destroy()
-
-
-        fig = Figure(figsize=(6, 6), dpi=100)
-        ax = fig.add_subplot(111)
-
-
-        ax.axhline(100, color='gray', linestyle='-', alpha=0.5)
-        ax.axvline(100, color='gray', linestyle='-', alpha=0.5)
-
-
-        max_dist = 0
+        self._clear_frame(self.rrg_chart_frame, exclude=self.rrg_status_label)
+        fig = Figure(figsize=(6, 6), dpi=100); ax = fig.add_subplot(111)
+        ax.axhline(100, color='gray', alpha=0.5); ax.axvline(100, color='gray', alpha=0.5)
+        max_dist = max([max(abs(df['RS_Ratio'] - 100).max(), abs(df['RS_Momentum'] - 100).max()) for ticker, df in trails.items() if ticker in latest] + [2])
+        limit = max_dist + 1; ax.set_xlim(100 - limit, 100 + limit); ax.set_ylim(100 - limit, 100 + limit)
+        for t, x, y, c in [("LEADING", 0.95, 0.95, 'green'), ("WEAKENING", 0.95, 0.05, 'orange'), ("LAGGING", 0.05, 0.05, 'red'), ("IMPROVING", 0.05, 0.95, 'blue')]:
+            ax.text(x, y, t, transform=ax.transAxes, color=c, fontweight='bold', alpha=0.2, ha='right' if x > 0.5 else 'left', va='top' if y > 0.5 else 'bottom')
         for ticker, df in trails.items():
             if ticker in latest:
-
-
-                r_max = abs(df['RS_Ratio'] - 100).max()
-                m_max = abs(df['RS_Momentum'] - 100).max()
-                max_dist = max(max_dist, r_max, m_max)
-
-
-        limit = max_dist + 2
-        if limit < 2: limit = 2
-
-
-        ax.set_xlim(100 - limit, 100 + limit)
-        ax.set_ylim(100 - limit, 100 + limit)
-
-
-        ax.text(0.95, 0.95, "LEADING", transform=ax.transAxes,
-                color='green', fontweight='bold', alpha=0.3, ha='right', va='top')
-
-
-        ax.text(0.95, 0.05, "WEAKENING", transform=ax.transAxes,
-                color='orange', fontweight='bold', alpha=0.3, ha='right', va='bottom')
-
-
-        ax.text(0.05, 0.05, "LAGGING", transform=ax.transAxes,
-                color='red', fontweight='bold', alpha=0.3, ha='left', va='bottom')
-
-
-        ax.text(0.05, 0.95, "IMPROVING", transform=ax.transAxes,
-                color='blue', fontweight='bold', alpha=0.3, ha='left', va='top')
-
-
-        for ticker, df in trails.items():
-            if ticker in latest:
-
-                ax.plot(df['RS_Ratio'], df['RS_Momentum'],  alpha=0.6, linewidth=1)
-
-                ratio = latest[ticker]['RS_Ratio']
-                mom = latest[ticker]['RS_Momentum']
-
-                color = 'black'
-                if ratio > 100 and mom > 100: color = 'green'
-                elif ratio > 100 and mom < 100: color = 'orange'
-                elif ratio < 100 and mom < 100: color = 'red'
-                elif ratio < 100 and mom > 100: color = 'blue'
-
-                ax.scatter(ratio, mom, color=color, s=50)
-                ax.text(ratio, mom, f" {ticker}", fontsize=8)
-
-        ax.set_title("Relative Rotation Graph (vs Benchmark)")
-        ax.set_xlabel("JdK RS-Ratio (Trend)")
-        ax.set_ylabel("JdK RS-Momentum (Velocity)")
-        ax.grid(True, linestyle=':', alpha=0.6)
-
-        fig.tight_layout()
-
-        canvas = FigureCanvasTkAgg(fig, master=self.rrg_chart_frame)
-        canvas.draw()
-        canvas.get_tk_widget().pack(fill='both', expand=True)
+                ax.plot(df['RS_Ratio'], df['RS_Momentum'], alpha=0.6, linewidth=1)
+                r, m = latest[ticker]['RS_Ratio'], latest[ticker]['RS_Momentum']
+                color = 'green' if r > 100 and m > 100 else 'orange' if r > 100 else 'red' if m < 100 else 'blue'
+                ax.scatter(r, m, color=color, s=50); ax.text(r, m, f" {ticker}", fontsize=8)
+        ax.set_title("Relative Rotation Graph"); ax.set_xlabel("JdK RS-Ratio"); ax.set_ylabel("JdK RS-Momentum"); ax.grid(True, linestyle=':', alpha=0.6)
+        fig.tight_layout(); FigureCanvasTkAgg(fig, master=self.rrg_chart_frame).get_tk_widget().pack(fill='both', expand=True)
 
 if __name__ == "__main__":
     app = FinancialDashboardArgs()
