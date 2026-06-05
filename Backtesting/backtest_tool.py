@@ -344,7 +344,7 @@ def render():
 
     col1, col2 = st.columns(2)
     with col1:
-        tickers_input = st.text_input("Tickers (separados por vírgula):", value="BBAS3.SA, ITUB4.SA, CMIG4.SA", key="bt_tickers")
+        tickers_input = st.text_input("Tickers (separados por vírgula):", value="ABCB4.SA, BBAS3.SA, BBSE3.SA, CMIG4.SA, ITUB3.SA, KLBN11.SA, TIMS3.SA, TAEE11.SA", key="bt_tickers")
         initial_inv = st.number_input("Investimento Inicial (R$):", min_value=0.0, value=10000.0, step=1000.0, key="bt_initial_inv")
         monthly_inv = st.number_input("Investimento Mensal (R$):", min_value=0.0, value=1000.0, step=100.0, key="bt_monthly_inv")
     
