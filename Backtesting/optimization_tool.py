@@ -4,30 +4,42 @@ import numpy as np
 import io
 
 class PortfolioOptimizer:
-    def __init__(self, tickers, start_date, end_date=None, risk_free_rate=0.10):
+    def __init__(self, tickers, start_date, end_date=None, risk_free_rate=0.10, price_data=None):
         self.tickers = tickers
         self.start_date = start_date
         self.end_date = end_date if end_date else pd.Timestamp.now().strftime('%Y-%m-%d')
         self.risk_free_rate = risk_free_rate
         self.data = pd.DataFrame()
+        self.price_data = price_data
     
     def fetch_data(self):
-        # Similar data fetching logic as Backtester but simpler (just Close prices)
-        # Assuming US stocks don't have .SA, same logic
-        us_stocks = [t for t in self.tickers if not t.endswith('.SA') and not '.' in t] # Simple heuristic
-        # Actually in the backtester we checked if it didn't end with .SA. 
-        # But 'USDBRL=X' has . in it.
-        # Let's rely on standard yfinance, user usually provides proper tickers.
-        # But to be safe and consistent with backtester:
         us_stocks = [t for t in self.tickers if not t.endswith('.SA') and not 'BRL' in t and not '=' in t]
          
-        print(f"Fetching data for {self.tickers}...")
-        data = yf.download(self.tickers, start=self.start_date, end=self.end_date)['Close']
+        if self.price_data is not None and not self.price_data.empty:
+            print("Using injected price data...")
+            if 'Close' in self.price_data.columns:
+                data = self.price_data['Close']
+            else:
+                data = self.price_data
+        else:
+            print(f"Fetching data for {self.tickers}...")
+            data = yf.download(self.tickers, start=self.start_date, end=self.end_date)['Close']
+            
+        if data.index.tz is not None:
+            data.index = data.index.tz_localize(None)
+            
+        if isinstance(data, pd.Series):
+            data = data.to_frame()
+            
+        if len(self.tickers) == 1 and 'Close' in data.columns:
+            data = data.rename(columns={'Close': self.tickers[0]})
         
         # Currency conv if needed
         if us_stocks:
              currency_data = yf.download("USDBRL=X", start=self.start_date, end=self.end_date)['Close']
              if isinstance(currency_data, pd.DataFrame): currency_data = currency_data.iloc[:, 0]
+             if currency_data.index.tz is not None:
+                 currency_data.index = currency_data.index.tz_localize(None)
              currency_data = currency_data.ffill().bfill()
              
              # Reindex

@@ -25,6 +25,43 @@ class BreadthAnalyzer:
         self.data = pd.DataFrame()
         self.mas = [9, 21, 50, 80, 200]
         
+    def fetch_ibovespa_tickers(self):
+        """Fetches the current Ibovespa constituents list from B3 API."""
+        import base64
+        import json
+        import requests
+        
+        print("Fetching updated Ibovespa constituents from B3 API...")
+        try:
+            payload = {
+                "language": "pt-br",
+                "pageNumber": 1,
+                "pageSize": 120,
+                "index": "IBOV",
+                "segment": "1"
+            }
+            payload_json = json.dumps(payload)
+            encoded_payload = base64.b64encode(payload_json.encode('utf-8')).decode('utf-8')
+            url = f"https://sistemaswebb3-listados.b3.com.br/indexProxy/indexCall/GetPortfolioDay/{encoded_payload}"
+            
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+            }
+            response = requests.get(url, headers=headers, timeout=15)
+            response.raise_for_status()
+            data = response.json()
+            
+            if 'results' in data and data['results']:
+                tickers = [f"{item['cod']}.SA" for item in data['results'] if item.get('cod')]
+                if tickers:
+                    print(f"Successfully fetched {len(tickers)} Ibovespa tickers.")
+                    return tickers
+        except Exception as e:
+            print(f"Error fetching Ibovespa constituents: {e}")
+            
+        print("Falling back to hardcoded Ibovespa tickers.")
+        return IBOV_TICKERS
+
     def fetch_all_b3_tickers(self):
         """Scrapes Fundamentus to get all B3 tickers with liquidity > 0"""
         url = "https://www.fundamentus.com.br/resultado.php"
@@ -53,6 +90,8 @@ class BreadthAnalyzer:
         """Fetches last ~400 days of data."""
         if self.mode == 'full':
             self.tickers = self.fetch_all_b3_tickers()
+        else:
+            self.tickers = self.fetch_ibovespa_tickers()
             
         start_date = (datetime.now() - timedelta(days=400)).strftime('%Y-%m-%d')
         print(f"Fetching data for {len(self.tickers)} stocks...")

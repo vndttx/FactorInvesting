@@ -366,7 +366,7 @@ class FinancialDashboardArgs(tk.Tk):
 
         except Exception as e:
             mensagem_erro = str(e)
-            self.after(0, lambda: messagebox.showerror("Erro no Backtest", str(e)))
+            self.after(0, lambda: messagebox.showerror("Erro no Backtest", mensagem_erro))
         finally:
             self.is_processing = False
             self.after(0, lambda: self.btn_run_bt.config(state='normal'))
@@ -648,7 +648,8 @@ class FinancialDashboardArgs(tk.Tk):
             self.after(0, lambda: self._update_optimization_ui(results))
 
         except Exception as e:
-            self.after(0, lambda: messagebox.showerror("Erro na Otimização", str(e)))
+            error_msg = str(e)
+            self.after(0, lambda: messagebox.showerror("Erro na Otimização", error_msg))
         finally:
             self.is_processing = False
             self.after(0, lambda: self.btn_run_opt.config(state='normal'))
@@ -827,7 +828,8 @@ class FinancialDashboardArgs(tk.Tk):
             metrics, _ = market_breadth.BreadthAnalyzer(mode=mode).calculate_breadth()
             self.after(0, lambda: self._show_breadth_results(metrics))
         except Exception as e:
-            self.after(0, lambda: messagebox.showerror("Breadth Error", str(e)))
+            error_msg = str(e)
+            self.after(0, lambda: messagebox.showerror("Breadth Error", error_msg))
             self.after(0, lambda: self.btn_run_breadth.config(state='normal'))
 
     def _show_breadth_results(self, metrics):
@@ -885,7 +887,8 @@ class FinancialDashboardArgs(tk.Tk):
             rrg = rrg_tool.RRGCalculator(tickers, bench, "2023-01-01", window); rrg.calculate()
             self.after(0, lambda: self._show_rrg_results(rrg.get_trails(trail), rrg.get_latest_values()))
         except Exception as e:
-            self.after(0, lambda: messagebox.showerror("RRG Error", str(e)))
+            error_msg = str(e)
+            self.after(0, lambda: messagebox.showerror("RRG Error", error_msg))
             self.after(0, lambda: self.rrg_status_label.config(text="Error occurred."))
 
     def _show_rrg_results(self, trails, latest):
