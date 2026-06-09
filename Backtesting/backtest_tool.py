@@ -344,7 +344,7 @@ def render():
 
     col1, col2 = st.columns(2)
     with col1:
-        tickers_input = st.text_input("Tickers (separados por vírgula):", value="ABCB4.SA, BBAS3.SA, BBSE3.SA, CMIG4.SA, ITUB3.SA, KLBN11.SA, TIMS3.SA, TAEE11.SA", key="bt_tickers")
+        tickers_input = st.text_input("Tickers separados por espaço (ex: ABCB4 BBAS3 BBSE3):", value="ABCB4 BBAS3 BBSE3 CMIG4 ITUB3 KLBN11 TIMS3 TAEE11", key="bt_tickers")
         initial_inv = st.number_input("Investimento Inicial (R$):", min_value=0.0, value=10000.0, step=1000.0, key="bt_initial_inv")
         monthly_inv = st.number_input("Investimento Mensal (R$):", min_value=0.0, value=1000.0, step=100.0, key="bt_monthly_inv")
     
@@ -354,7 +354,10 @@ def render():
         rf_alloc = st.slider("Alocação em Renda Fixa (%):", min_value=0.0, max_value=100.0, value=0.0, step=5.0, key="bt_rf_alloc") / 100.0
 
     if st.button("Rodar Backtest do Portfólio"):
-        tickers_list = [t.strip().upper() for t in tickers_input.split(",")]
+        tickers_list = [t if t.endswith(".SA") else f"{t}.SA" for t in tickers_input.replace(',', ' ').strip().upper().split()]
+        if not tickers_list:
+            st.error("Por favor, insira pelo menos um ticker.")
+            return
         
         with st.spinner("Buscando dados históricos e calculando retornos..."):
             try:
@@ -403,7 +406,45 @@ def render():
                 ax.legend()
                 ax.grid(True, linestyle="--", alpha=0.5)
                 
-                st.pyplot(fig)
+                col_chart, _ = st.columns([3, 1])
+                with col_chart:
+                    st.pyplot(fig, use_container_width=True)
+                
+                # --- MATRIZ DE DIVIDENDOS MENSAIS ---
+                if backtester.daily_dividends:
+                    st.subheader("Recebimento Mensal de Dividendos (R$)")
+                    
+                    df_divs = pd.DataFrame.from_dict(backtester.daily_dividends, orient='index', columns=['Dividend'])
+                    df_divs.index = pd.to_datetime(df_divs.index)
+                    df_divs['Year'] = df_divs.index.year
+                    df_divs['Month'] = df_divs.index.month
+                    monthly_pivot = df_divs.pivot_table(index='Year', columns='Month', values='Dividend', aggfunc='sum').fillna(0)
+                    
+                    # Garantir que todos os meses de 1 a 12 estejam representados
+                    for m in range(1, 13):
+                        if m not in monthly_pivot.columns:
+                            monthly_pivot[m] = 0.0
+                    
+                    # Reordenar colunas
+                    monthly_pivot = monthly_pivot[list(range(1, 13))]
+                    
+                    # Mapear nomes dos meses
+                    month_map = {1: 'Jan', 2: 'Fev', 3: 'Mar', 4: 'Abr', 5: 'Mai', 6: 'Jun', 
+                                 7: 'Jul', 8: 'Ago', 9: 'Set', 10: 'Out', 11: 'Nov', 12: 'Dez'}
+                    monthly_pivot = monthly_pivot.rename(columns=month_map)
+                    
+                    # Adicionar total
+                    monthly_pivot['Total'] = monthly_pivot.sum(axis=1)
+                    
+                    # Exibir tabela formatada
+                    st.dataframe(
+                        monthly_pivot,
+                        use_container_width=True,
+                        column_config={
+                            col: st.column_config.NumberColumn(col, format="R$ %.2f") 
+                            for col in monthly_pivot.columns
+                        }
+                    )
                 
             except Exception as e:
                 st.error(f"Erro ao executar o backtest: {str(e)}")
