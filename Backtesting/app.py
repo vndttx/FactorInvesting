@@ -3,7 +3,6 @@ import pandas as pd
 import yfinance as yf
 from datetime import datetime
 import matplotlib.pyplot as plt
-
 import valuation
 import backtest_tool
 import optimization_tool
