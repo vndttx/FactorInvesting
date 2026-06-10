@@ -313,10 +313,10 @@ class FinancialDashboardArgs(tk.Tk):
                 else:
                     groups["P/E (15x)"].append((f"{t_short}", "N/A", "-", "-", "No Data"))
 
-                peg_v = valuation.calculate_peg(data)
-                if peg_v:
-                    status = "Undervalued" if peg_v < 1 else "Overvalued"
-                    groups["PEG Ratio"].append((f"{t_short}", f"{peg_v:.2f}", "-", status, "Ideal < 1.0"))
+                peg_val, peg_note = valuation.calculate_peg(data)
+                if peg_val is not None:
+                    status = "Undervalued" if peg_val < 1 else "Overvalued"
+                    groups["PEG Ratio"].append((f"{t_short}", f"{peg_val:.2f}", "-", status, f"Ideal < 1.0 ({peg_note})"))
                 else:
                     groups["PEG Ratio"].append((f"{t_short}", "N/A", "-", "-", "No Data"))
 
