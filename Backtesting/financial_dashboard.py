@@ -21,7 +21,6 @@ import matplotlib.ticker as mtick
 GLOBAL_DATA_CACHE = {}
 
 def get_cached_data(tickers, start_date, end_date):
-    """Recupera dados do yfinance com cache para evitar downloads redundantes."""
     cache_key = (tuple(sorted(tickers)), start_date, end_date)
     
     if cache_key not in GLOBAL_DATA_CACHE:
